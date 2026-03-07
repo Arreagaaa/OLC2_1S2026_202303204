@@ -21,15 +21,18 @@ fi
 
 mkdir -p "$OUT_DIR"
 
-# copiar la gramatica al directorio de salida para que ANTLR no anide subcarpetas
+# copiar la gramatica al directorio de salida; ANTLR se ejecuta desde dentro
+# para evitar que anide subcarpetas por el path del archivo
 cp "$GRAMMAR" "$OUT_DIR/Golampi.g4"
 
+pushd "$OUT_DIR" > /dev/null
 java -jar "$ANTLR4_JAR" \
     -Dlanguage=PHP \
     -visitor \
     -no-listener \
-    -o "$OUT_DIR" \
-    "$OUT_DIR/Golampi.g4"
+    -o . \
+    Golampi.g4
+popd > /dev/null
 
 # limpiar la copia temporal de la gramatica
 rm -f "$OUT_DIR/Golampi.g4"

@@ -25,6 +25,9 @@ FALSE   : 'false' ;
 // tipos
 INT32   : 'int32' ;
 FLOAT32 : 'float32' ;
+INT     : 'int' ;
+INT64   : 'int64' ;
+FLOAT64 : 'float64' ;
 BOOL    : 'bool' ;
 RUNE_T  : 'rune' ;
 STRING_T: 'string' ;
@@ -39,6 +42,8 @@ STRING_LIT: '"' (~["\\] | '\\' .)* '"' ;
 ID : [a-zA-Z_][a-zA-Z0-9_]* ;
 
 // ─── operadores y delimitadores ───────────────────────────────────────────────
+INC         : '++' ;
+DEC         : '--' ;
 PLUS_ASSIGN : '+=' ;
 MINUS_ASSIGN: '-=' ;
 STAR_ASSIGN : '*=' ;
@@ -101,7 +106,7 @@ paramList
     ;
 
 param
-    : STAR? typeRef ID                                      # ParamDecl
+    : ID typeRef                                             # ParamDecl
     ;
 
 // ─── sentencias ───────────────────────────────────────────────────────────────
@@ -128,14 +133,14 @@ stmt
 
 // ─── declaración de variables ──────────────────────────────────────────────────
 varDecl
-    : VAR typeRef ID (ASSIGN expr)?                         # VarDeclSimple
-    | VAR typeRef ID LBRACKET INT_LIT RBRACKET              # VarArrayDecl1D
-    | VAR typeRef ID LBRACKET INT_LIT RBRACKET
-        LBRACKET INT_LIT RBRACKET                           # VarArrayDecl2D
+    : VAR ID typeRef (ASSIGN expr)?                         # VarDeclSimple
+    | VAR ID LBRACKET INT_LIT RBRACKET typeRef              # VarArrayDecl1D
+    | VAR ID LBRACKET INT_LIT RBRACKET
+        LBRACKET INT_LIT RBRACKET typeRef                   # VarArrayDecl2D
     ;
 
 constDecl
-    : CONST typeRef ID ASSIGN expr                          # ConstDeclRule
+    : CONST ID typeRef ASSIGN expr                          # ConstDeclRule
     ;
 
 shortDecl
@@ -193,6 +198,8 @@ forInit
 forPost
     : assignment                                            # ForPostAssign
     | compoundAssign                                        # ForPostCompound
+    | ID INC                                               # ForPostInc
+    | ID DEC                                               # ForPostDec
     ;
 
 // ─── expresiones ──────────────────────────────────────────────────────────────
@@ -249,6 +256,9 @@ argList
 typeRef
     : INT32
     | FLOAT32
+    | INT
+    | INT64
+    | FLOAT64
     | BOOL
     | RUNE_T
     | STRING_T

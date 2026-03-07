@@ -38,6 +38,8 @@ use Context\ForInitShortContext;
 use Context\ForInitAssignContext;
 use Context\ForPostAssignContext;
 use Context\ForPostCompoundContext;
+use Context\ForPostIncContext;
+use Context\ForPostDecContext;
 use Context\VarDeclSimpleContext;
 use Context\VarArrayDecl1DContext;
 use Context\VarArrayDecl2DContext;
@@ -196,8 +198,8 @@ class Interpreter extends \GolampiBaseVisitor
 
     public function visitParamDecl(ParamDeclContext $ctx): array
     {
-        $byRef = $ctx->STAR() !== null;
         $type  = $ctx->typeRef()->getText();
+        $byRef = str_starts_with($type, '*');
         $name  = $ctx->ID()->getText();
         return ['name' => $name, 'type' => $type, 'byRef' => $byRef];
     }
@@ -547,34 +549,18 @@ class Interpreter extends \GolampiBaseVisitor
         $cond = $this->visit($ctx->expr());
 
         if ($cond) {
-            $result = $this->visit($ctx->block());
-            if ($result instanceof FlowType) {
-                return $result;
-            }
+            $result = $this->visit($ctx->block(0));
+            if ($result instanceof FlowType) return $result;
         } else {
-            // puede venir else ifStmt o else block
-            $children = $ctx->children;
-            foreach ($children as $child) {
-                if ($child instanceof IfStmtRuleContext) {
-                    $result = $this->visit($child);
-                    if ($result instanceof FlowType) {
-                        return $result;
-                    }
-                    break;
-                }
-                if ($child instanceof BlockStmtContext) {
-                    // el segundo bloque es el else
-                    static $blockCount = 0;
-                    $blockCount++;
-                    if ($blockCount > 1) {
-                        $blockCount = 0;
-                        $result = $this->visit($child);
-                        if ($result instanceof FlowType) {
-                            return $result;
-                        }
-                        break;
-                    }
-                }
+            // else-if
+            $nestedIf = $ctx->ifStmt();
+            if ($nestedIf !== null) {
+                $result = $this->visit($nestedIf);
+                if ($result instanceof FlowType) return $result;
+            } elseif (count($ctx->block()) > 1) {
+                // else block
+                $result = $this->visit($ctx->block(1));
+                if ($result instanceof FlowType) return $result;
             }
         }
 
@@ -721,6 +707,34 @@ class Interpreter extends \GolampiBaseVisitor
     public function visitForPostCompound(ForPostCompoundContext $ctx): mixed
     {
         return $this->visit($ctx->compoundAssign());
+    }
+
+    public function visitForPostInc(ForPostIncContext $ctx): mixed
+    {
+        $name = $ctx->ID()->getText();
+        try {
+            $sym = $this->env->get($name);
+            $this->env->assign($name, $sym->valor + 1);
+        } catch (\RuntimeException $e) {
+            $this->errors->addSemantic($e->getMessage(),
+                $ctx->ID()->getSymbol()->getLine(),
+                $ctx->ID()->getSymbol()->getCharPositionInLine());
+        }
+        return null;
+    }
+
+    public function visitForPostDec(ForPostDecContext $ctx): mixed
+    {
+        $name = $ctx->ID()->getText();
+        try {
+            $sym = $this->env->get($name);
+            $this->env->assign($name, $sym->valor - 1);
+        } catch (\RuntimeException $e) {
+            $this->errors->addSemantic($e->getMessage(),
+                $ctx->ID()->getSymbol()->getLine(),
+                $ctx->ID()->getSymbol()->getCharPositionInLine());
+        }
+        return null;
     }
 
     // ─── llamadas de usuario ──────────────────────────────────────────────────
@@ -1010,12 +1024,11 @@ class Interpreter extends \GolampiBaseVisitor
     private function defaultValue(string $type): mixed
     {
         return match ($type) {
-            'int32'   => 0,
-            'float32' => 0.0,
-            'bool'    => false,
-            'rune'    => 0,
-            'string'  => '',
-            default   => null,
+            'int', 'int32', 'int64', 'rune' => 0,
+            'float32', 'float64'            => 0.0,
+            'bool'                          => false,
+            'string'                        => '',
+            default                         => null,
         };
     }
 
