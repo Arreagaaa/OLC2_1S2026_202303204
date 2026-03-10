@@ -129,14 +129,13 @@ stmt
     | callExpr SEMICOLON                                    # CallStmt
     | fmtPrintln SEMICOLON                                  # PrintlnStmt
     | arrayAssign SEMICOLON                                 # ArrayAssignStmt
+    | ID INC SEMICOLON                                      # IncStmt
+    | ID DEC SEMICOLON                                      # DecStmt
     ;
 
 // ─── declaración de variables ──────────────────────────────────────────────────
 varDecl
-    : VAR ID typeRef (ASSIGN expr)?                         # VarDeclSimple
-    | VAR ID LBRACKET INT_LIT RBRACKET typeRef              # VarArrayDecl1D
-    | VAR ID LBRACKET INT_LIT RBRACKET
-        LBRACKET INT_LIT RBRACKET typeRef                   # VarArrayDecl2D
+    : VAR idList typeRef (ASSIGN exprList)?                 # VarDeclSimple
     ;
 
 constDecl
@@ -232,10 +231,10 @@ primary
     | FALSE                                                 # FalseLit
     | NIL                                                   # NilLit
     | LBRACKET INT_LIT RBRACKET typeRef
-        LBRACE (expr (COMMA expr)*)? RBRACE                 # ArrayLit1D
+        LBRACE (expr (COMMA expr)* COMMA?)? RBRACE          # ArrayLit1D
     | LBRACKET INT_LIT RBRACKET LBRACKET INT_LIT RBRACKET typeRef
-        LBRACE (LBRACE (expr (COMMA expr)*)? RBRACE
-        (COMMA LBRACE (expr (COMMA expr)*)? RBRACE)*)? RBRACE
+        LBRACE (LBRACE (expr (COMMA expr)* COMMA?)? RBRACE
+        (COMMA LBRACE (expr (COMMA expr)* COMMA?)? RBRACE)* COMMA?)? RBRACE
                                                             # ArrayLit2D
     ;
 

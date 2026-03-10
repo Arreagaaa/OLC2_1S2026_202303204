@@ -25,6 +25,8 @@ use Context\ForStmtWrapContext;
 use Context\CallStmtContext;
 use Context\PrintlnStmtContext;
 use Context\ArrayAssignStmtContext;
+use Context\IncStmtContext;
+use Context\DecStmtContext;
 
 use Context\FunctionDeclarationContext;
 use Context\IfStmtRuleContext;
@@ -41,8 +43,6 @@ use Context\ForPostCompoundContext;
 use Context\ForPostIncContext;
 use Context\ForPostDecContext;
 use Context\VarDeclSimpleContext;
-use Context\VarArrayDecl1DContext;
-use Context\VarArrayDecl2DContext;
 use Context\ConstDeclRuleContext;
 use Context\ShortDeclRuleContext;
 use Context\SimpleAssignContext;
@@ -276,6 +276,34 @@ class Interpreter extends \GolampiBaseVisitor
         return $this->visit($ctx->arrayAssign());
     }
 
+    public function visitIncStmt(IncStmtContext $ctx): mixed
+    {
+        $name = $ctx->ID()->getText();
+        try {
+            $sym = $this->env->get($name);
+            $this->env->assign($name, $sym->valor + 1);
+        } catch (\RuntimeException $e) {
+            $this->errors->addSemantic($e->getMessage(),
+                $ctx->ID()->getSymbol()->getLine(),
+                $ctx->ID()->getSymbol()->getCharPositionInLine());
+        }
+        return null;
+    }
+
+    public function visitDecStmt(DecStmtContext $ctx): mixed
+    {
+        $name = $ctx->ID()->getText();
+        try {
+            $sym = $this->env->get($name);
+            $this->env->assign($name, $sym->valor - 1);
+        } catch (\RuntimeException $e) {
+            $this->errors->addSemantic($e->getMessage(),
+                $ctx->ID()->getSymbol()->getLine(),
+                $ctx->ID()->getSymbol()->getCharPositionInLine());
+        }
+        return null;
+    }
+
     // ─── fmt.Println ──────────────────────────────────────────────────────────
 
     public function visitPrintlnStmt(PrintlnStmtContext $ctx): mixed
@@ -306,72 +334,28 @@ class Interpreter extends \GolampiBaseVisitor
 
     public function visitVarDeclSimple(VarDeclSimpleContext $ctx): mixed
     {
-        $type = $ctx->typeRef()->getText();
-        $name = $ctx->ID()->getText();
-        $line = $ctx->ID()->getSymbol()->getLine();
-        $col  = $ctx->ID()->getSymbol()->getCharPositionInLine();
-
-        if ($this->env->existsLocal($name)) {
-            $this->errors->addSemantic("Variable '$name' ya declarada en este scope.", $line, $col);
-            return null;
-        }
-
-        $value = ($ctx->expr() !== null)
-            ? $this->visit($ctx->expr())
-            : $this->defaultValue($type);
-
-        $sym = new Symbol($name, $type, $value, Symbol::CLASE_VARIABLE, 'local', $line, $col);
-        $this->env->declare($name, $sym);
-        $this->symbolTable[] = $sym;
-
-        return null;
-    }
-
-    public function visitVarArrayDecl1D(VarArrayDecl1DContext $ctx): mixed
-    {
-        $type = $ctx->typeRef()->getText();
-        $name = $ctx->ID()->getText();
-        $size = (int) $ctx->INT_LIT()->getText();
-        $line = $ctx->ID()->getSymbol()->getLine();
-        $col  = $ctx->ID()->getSymbol()->getCharPositionInLine();
-
-        if ($this->env->existsLocal($name)) {
-            $this->errors->addSemantic("Variable '$name' ya declarada en este scope.", $line, $col);
-            return null;
-        }
-
-        $arr = array_fill(0, $size, $this->defaultValue($type));
-        $sym = new Symbol($name, $type . '[]', $arr, Symbol::CLASE_VARIABLE, 'local', $line, $col);
-        $this->env->declare($name, $sym);
-        $this->symbolTable[] = $sym;
-
-        return null;
-    }
-
-    public function visitVarArrayDecl2D(VarArrayDecl2DContext $ctx): mixed
-    {
         $type  = $ctx->typeRef()->getText();
-        $name  = $ctx->ID()->getText();
-        $sizes = $ctx->INT_LIT();
-        $rows  = (int) $sizes[0]->getText();
-        $cols  = (int) $sizes[1]->getText();
-        $line  = $ctx->ID()->getSymbol()->getLine();
-        $col   = $ctx->ID()->getSymbol()->getCharPositionInLine();
+        $ids   = $ctx->idList()->ID();
+        $exprs = ($ctx->exprList() !== null) ? $ctx->exprList()->expr() : [];
 
-        if ($this->env->existsLocal($name)) {
-            $this->errors->addSemantic("Variable '$name' ya declarada en este scope.", $line, $col);
-            return null;
+        foreach ($ids as $i => $idNode) {
+            $name = $idNode->getText();
+            $line = $idNode->getSymbol()->getLine();
+            $col  = $idNode->getSymbol()->getCharPositionInLine();
+
+            if ($this->env->existsLocal($name)) {
+                $this->errors->addSemantic("Variable '$name' ya declarada en este scope.", $line, $col);
+                continue;
+            }
+
+            $value = isset($exprs[$i])
+                ? $this->visit($exprs[$i])
+                : $this->defaultValue($type);
+
+            $sym = new Symbol($name, $type, $value, Symbol::CLASE_VARIABLE, 'local', $line, $col);
+            $this->env->declare($name, $sym);
+            $this->symbolTable[] = $sym;
         }
-
-        $default = $this->defaultValue($type);
-        $arr     = [];
-        for ($r = 0; $r < $rows; $r++) {
-            $arr[] = array_fill(0, $cols, $default);
-        }
-
-        $sym = new Symbol($name, $type . '[][]', $arr, Symbol::CLASE_VARIABLE, 'local', $line, $col);
-        $this->env->declare($name, $sym);
-        $this->symbolTable[] = $sym;
 
         return null;
     }
@@ -461,7 +445,10 @@ class Interpreter extends \GolampiBaseVisitor
                 '+=' => $left + $right,
                 '-=' => $left - $right,
                 '*=' => $left * $right,
-                '/=' => $right != 0 ? $left / $right
+                '/=' => $right != 0
+                    ? (is_int($left) && is_int($right)
+                        ? intdiv($left, $right)
+                        : $left / $right)
                     : $this->divisionByZero($name, $line, $col),
                 default => null,
             };
@@ -673,6 +660,10 @@ class Interpreter extends \GolampiBaseVisitor
 
     public function visitForClassic(ForClassicContext $ctx): mixed
     {
+        // crear scope propio para la variable de inicializacion del for
+        $prevEnv   = $this->env;
+        $this->env = new Environment($prevEnv);
+
         $this->visit($ctx->forInit());
 
         while ($this->visit($ctx->expr())) {
@@ -681,11 +672,13 @@ class Interpreter extends \GolampiBaseVisitor
                 break;
             }
             if ($result instanceof ReturnType) {
+                $this->env = $prevEnv;
                 return $result;
             }
             $this->visit($ctx->forPost());
         }
 
+        $this->env = $prevEnv;
         return null;
     }
 
@@ -824,16 +817,21 @@ class Interpreter extends \GolampiBaseVisitor
         $right = $this->visit($ctx->expr(1));
         $op    = $ctx->op->getText();
 
-        return match ($op) {
-            '*'  => $left * $right,
-            '/'  => $right != 0
-                    ? (is_int($left) && is_int($right) ? intdiv($left, $right) : $left / $right)
-                    : $this->divisionByZero('expresion', $ctx->op->getLine(), $ctx->op->getCharPositionInLine()),
-            '%'  => $right != 0
-                    ? $left % $right
-                    : $this->divisionByZero('expresion', $ctx->op->getLine(), $ctx->op->getCharPositionInLine()),
-            default => null,
-        };
+        if ($op === '*') {
+            // int32 * string => string repetition (spec multiplication table)
+            if (is_int($left) && is_string($right)) return str_repeat($right, max(0, $left));
+            if (is_string($left) && is_int($right)) return str_repeat($left, max(0, $right));
+            return $left * $right;
+        }
+        if ($op === '/') {
+            if ($right == 0) return $this->divisionByZero('expresion', $ctx->op->getLine(), $ctx->op->getCharPositionInLine());
+            return (is_int($left) && is_int($right)) ? intdiv($left, $right) : $left / $right;
+        }
+        if ($op === '%') {
+            if ($right == 0) return $this->divisionByZero('expresion', $ctx->op->getLine(), $ctx->op->getCharPositionInLine());
+            return $left % $right;
+        }
+        return null;
     }
 
     public function visitAddExpr(AddExprContext $ctx): mixed
@@ -842,16 +840,9 @@ class Interpreter extends \GolampiBaseVisitor
         $right = $this->visit($ctx->expr(1));
         $op    = $ctx->op->getText();
 
-        // string + string => concatenacion
+        // string + string => concatenacion (spec sum table)
         if ($op === '+' && is_string($left) && is_string($right)) {
             return $left . $right;
-        }
-        // int * string => repeticion (ej. Python-like permitido segun spec)
-        if ($op === '+' && is_int($left) && is_string($right)) {
-            return str_repeat($right, $left);
-        }
-        if ($op === '+' && is_string($left) && is_int($right)) {
-            return str_repeat($left, $right);
         }
 
         return $op === '+' ? $left + $right : $left - $right;
@@ -975,12 +966,15 @@ class Interpreter extends \GolampiBaseVisitor
 
     public function visitArrayLit2D(ArrayLit2DContext $ctx): mixed
     {
-        // cada fila es un bloque { expr, expr, ... } -> los literales de arreglo anidados
-        // la gramatica los expone como expr() en orden; se agrupan por las llaves internas
-        // simplificado: retorna array de arrays segun los expr
-        // TODO: agrupar correctamente por filas en sprint 3
-        $exprs = $ctx->expr();
-        return array_map(fn($e) => $this->visit($e), $exprs);
+        // INT_LIT(0) = filas, INT_LIT(1) = columnas; las expresiones llegan en orden fila por fila
+        $rows   = (int) $ctx->INT_LIT(0)->getText();
+        $cols   = (int) $ctx->INT_LIT(1)->getText();
+        $flat   = array_map(fn($e) => $this->visit($e), $ctx->expr());
+        $result = [];
+        for ($r = 0; $r < $rows; $r++) {
+            $result[] = array_slice($flat, $r * $cols, $cols);
+        }
+        return $result;
     }
 
     // ─── acceso a arreglos ────────────────────────────────────────────────────
@@ -1020,9 +1014,18 @@ class Interpreter extends \GolampiBaseVisitor
 
     // ─── utiles ───────────────────────────────────────────────────────────────
 
-    // valor por defecto segun tipo de Golampi
+    // valor por defecto segun tipo de Golampi (soporta tipos array como [5]int, [2][3]float32)
     private function defaultValue(string $type): mixed
     {
+        if (str_starts_with($type, '[')) {
+            // extraer tamaño y tipo elemento: [N]elemType
+            preg_match('/^\[(\d+)\](.+)$/', $type, $m);
+            if ($m) {
+                $size     = (int) $m[1];
+                $elemType = $m[2];
+                return array_fill(0, $size, $this->defaultValue($elemType));
+            }
+        }
         return match ($type) {
             'int', 'int32', 'int64', 'rune' => 0,
             'float32', 'float64'            => 0.0,
