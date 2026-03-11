@@ -131,6 +131,7 @@ stmt
     | arrayAssign SEMICOLON                                 # ArrayAssignStmt
     | ID INC SEMICOLON                                      # IncStmt
     | ID DEC SEMICOLON                                      # DecStmt
+    | builtinCall SEMICOLON                                 # BuiltinStmt
     ;
 
 // ─── declaración de variables ──────────────────────────────────────────────────
@@ -207,6 +208,7 @@ expr
     | ID                                                    # IdExpr
     | callExpr                                              # CallExprWrap
     | fmtPrintln                                            # FmtPrintlnExpr
+    | builtinCall                                           # BuiltinExpr
     | ID LBRACKET expr RBRACKET                             # ArrayAccess1D
     | ID LBRACKET expr RBRACKET LBRACKET expr RBRACKET      # ArrayAccess2D
     | AMP ID                                                # RefExpr
@@ -245,6 +247,13 @@ callExpr
 
 fmtPrintln
     : 'fmt' DOT 'Println' LPAREN argList? RPAREN            # FmtPrintlnCall
+    ;
+
+builtinCall
+    : 'len'    LPAREN expr RPAREN                           # BuiltinLen
+    | 'now'    LPAREN RPAREN                                # BuiltinNow
+    | 'substr' LPAREN expr COMMA expr COMMA expr RPAREN     # BuiltinSubstr
+    | 'typeOf' LPAREN expr RPAREN                           # BuiltinTypeOf
     ;
 
 argList

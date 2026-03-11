@@ -82,6 +82,12 @@ use Context\FmtPrintlnCallContext;
 use Context\ParamDeclContext;
 use Context\ParamListContext;
 use Context\ArgListContext;
+use Context\BuiltinStmtContext;
+use Context\BuiltinExprContext;
+use Context\BuiltinLenContext;
+use Context\BuiltinNowContext;
+use Context\BuiltinSubstrContext;
+use Context\BuiltinTypeOfContext;
 
 use Context\FunctionDeclarationContext as FuncDeclCtx;
 
@@ -166,7 +172,16 @@ class Interpreter extends \GolampiBaseVisitor
 
         $returnTypes = [];
         if ($ctx->returnType() !== null) {
-            // se resuelve en sprint 4; por ahora solo registra el nodo
+            $rt = $ctx->returnType();
+            // MultiReturn: (type1, type2, ...)
+            if ($rt instanceof \Context\MultiReturnContext) {
+                foreach ($rt->typeList()->typeRef() as $t) {
+                    $returnTypes[] = $t->getText();
+                }
+            } else {
+                // SingleReturn: solo un tipo
+                $returnTypes[] = $rt->getText();
+            }
         }
 
         $funcion = new FuncionUsuario($ctx, $this->env, $params, $returnTypes);
@@ -384,6 +399,30 @@ class Interpreter extends \GolampiBaseVisitor
     {
         $ids   = $ctx->idList()->ID();
         $exprs = $ctx->exprList()->expr();
+
+        // Caso especial: N ids := 1 llamada que retorna N valores (múltiple retorno)
+        if (count($ids) > 1 && count($exprs) === 1) {
+            $result = $this->visit($exprs[0]);
+            // si la función retornó un array marcado como multi-return
+            if (is_array($result) && isset($result['__multi__'])) {
+                $values = $result['__multi__'];
+                foreach ($ids as $i => $idNode) {
+                    $name  = $idNode->getText();
+                    $value = $values[$i] ?? null;
+                    $type  = $this->inferType($value);
+                    $line  = $idNode->getSymbol()->getLine();
+                    $col   = $idNode->getSymbol()->getCharPositionInLine();
+                    if ($this->env->existsLocal($name)) {
+                        $this->env->assign($name, $value);
+                        continue;
+                    }
+                    $sym = new Symbol($name, $type, $value, Symbol::CLASE_VARIABLE, 'local', $line, $col);
+                    $this->env->declare($name, $sym);
+                    $this->symbolTable[] = $sym;
+                }
+                return null;
+            }
+        }
 
         foreach ($ids as $i => $idNode) {
             $name  = $idNode->getText();
@@ -854,13 +893,21 @@ class Interpreter extends \GolampiBaseVisitor
         $right = $this->visit($ctx->expr(1));
         $op    = $ctx->op->getText();
 
+        // nil comparisons return nil
+        if (is_null($left) || is_null($right)) {
+            if ($op === '==' || $op === '!=') {
+                return null;
+            }
+            return null;
+        }
+
         return match ($op) {
             '<'  => $left <  $right,
             '<=' => $left <= $right,
             '>'  => $left >  $right,
             '>=' => $left >= $right,
-            '==' => $left == $right,
-            '!=' => $left != $right,
+            '==' => $left === $right,
+            '!=' => $left !== $right,
             default => false,
         };
     }
@@ -1012,6 +1059,52 @@ class Interpreter extends \GolampiBaseVisitor
         }
     }
 
+    // ─── builtins ─────────────────────────────────────────────────────────────
+
+    public function visitBuiltinStmt(BuiltinStmtContext $ctx): mixed
+    {
+        return $this->visit($ctx->builtinCall());
+    }
+
+    public function visitBuiltinExpr(BuiltinExprContext $ctx): mixed
+    {
+        return $this->visit($ctx->builtinCall());
+    }
+
+    public function visitBuiltinLen(BuiltinLenContext $ctx): mixed
+    {
+        $val = $this->visit($ctx->expr());
+        if (is_string($val)) return strlen($val);
+        if (is_array($val))  return count($val);
+        $this->errors->addSemantic('len() requiere string o arreglo.',
+            $ctx->getStart()->getLine(), $ctx->getStart()->getCharPositionInLine());
+        return 0;
+    }
+
+    public function visitBuiltinNow(BuiltinNowContext $ctx): mixed
+    {
+        return date('Y-m-d H:i:s');
+    }
+
+    public function visitBuiltinSubstr(BuiltinSubstrContext $ctx): mixed
+    {
+        $str   = $this->visit($ctx->expr(0));
+        $start = (int) $this->visit($ctx->expr(1));
+        $len   = (int) $this->visit($ctx->expr(2));
+        if (!is_string($str)) {
+            $this->errors->addSemantic('substr() requiere string como primer argumento.',
+                $ctx->getStart()->getLine(), $ctx->getStart()->getCharPositionInLine());
+            return '';
+        }
+        return substr($str, $start, $len);
+    }
+
+    public function visitBuiltinTypeOf(BuiltinTypeOfContext $ctx): mixed
+    {
+        $val = $this->visit($ctx->expr());
+        return $this->inferType($val);
+    }
+
     // ─── utiles ───────────────────────────────────────────────────────────────
 
     // valor por defecto segun tipo de Golampi (soporta tipos array como [5]int, [2][3]float32)
@@ -1035,22 +1128,49 @@ class Interpreter extends \GolampiBaseVisitor
         };
     }
 
-    // infiere el tipo PHP -> tipo Golampi para declaraciones cortas
-    private function inferType(mixed $value): string
+    // infiere el tipo PHP -> tipo Golampi para declaraciones cortas y typeOf()
+    public function inferType(mixed $value): string
     {
+        if (is_bool($value))   return 'bool';   // antes de is_int porque bool es subtype de int en PHP
         if (is_int($value))    return 'int32';
         if (is_float($value))  return 'float32';
-        if (is_bool($value))   return 'bool';
         if (is_string($value)) return 'string';
+        if (is_array($value)) {
+            $count = count($value);
+            if ($count > 0 && is_array($value[0])) {
+                $inner = $this->inferArrayElemType($value[0]);
+                return '[' . $count . '][' . count($value[0]) . ']' . $inner;
+            }
+            $inner = $count > 0 ? $this->inferArrayElemType($value) : 'int32';
+            return '[' . $count . ']' . $inner;
+        }
         return 'nil';
+    }
+
+    private function inferArrayElemType(array $arr): string
+    {
+        foreach ($arr as $v) {
+            if (!is_array($v)) {
+                if (is_bool($v))   return 'bool';
+                if (is_int($v))    return 'int32';
+                if (is_float($v))  return 'float32';
+                if (is_string($v)) return 'string';
+            }
+        }
+        return 'int32';
     }
 
     // convierte un valor PHP a string para impresion
     public function valueToString(mixed $val): string
     {
         if (is_bool($val))  return $val ? 'true' : 'false';
-        if (is_null($val))  return 'nil';
+        if (is_null($val))  return '<nil>';
         if (is_array($val)) return '[' . implode(' ', array_map([$this, 'valueToString'], $val)) . ']';
+        if (is_float($val)) {
+            // evitar notacion cientifica y mostrar bien los decimales
+            $s = rtrim(number_format($val, 10, '.', ''), '0');
+            return rtrim($s, '.') ?: '0';
+        }
         return (string) $val;
     }
 

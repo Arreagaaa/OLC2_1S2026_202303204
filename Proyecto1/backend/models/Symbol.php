@@ -16,6 +16,9 @@ class Symbol
     public string  $ambito;
     public int     $fila;
     public int     $columna;
+    // para paso por referencia: nombre de la variable original y su entorno
+    public ?string $refName = null;
+    public mixed   $refEnv  = null;
 
     public function __construct(
         string $id,

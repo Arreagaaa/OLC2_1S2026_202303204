@@ -38,14 +38,39 @@ class FuncionUsuario extends Invocable
         $newEnv = new Environment($this->closure);
 
         foreach ($this->params as $i => $param) {
+            $arg = $args[$i] ?? null;
+
+            if ($param['byRef']) {
+                // el argumento es un array ['__ref__' => name, '__env__' => env]
+                // creamos un símbolo especial que apunta al original
+                if (is_array($arg) && isset($arg['__ref__'])) {
+                    $refName = $arg['__ref__'];
+                    $refEnv  = $arg['__env__'];
+                    // guardamos el valor actual para declarar el símbolo
+                    $refSym = $refEnv->get($refName);
+                    $sym = new Symbol(
+                        $param['name'],
+                        $param['type'],
+                        $refSym->valor,
+                        Symbol::CLASE_VARIABLE,
+                        'local',
+                        0, 0
+                    );
+                    // marcamos la referencia en el símbolo para que assign() la propague
+                    $sym->refName = $refName;
+                    $sym->refEnv  = $refEnv;
+                    $newEnv->declare($param['name'], $sym);
+                    continue;
+                }
+            }
+
             $sym = new Symbol(
                 $param['name'],
                 $param['type'],
-                $args[$i] ?? null,
+                $arg,
                 Symbol::CLASE_VARIABLE,
                 'local',
-                0,
-                0
+                0, 0
             );
             $newEnv->declare($param['name'], $sym);
         }
@@ -55,10 +80,25 @@ class FuncionUsuario extends Invocable
 
         $result = $visitor->visit($this->ctx->block());
 
+        // propagar cambios de parámetros byRef al entorno original
+        foreach ($this->params as $param) {
+            if ($param['byRef']) {
+                $localSym = $newEnv->getLocal($param['name']);
+                if ($localSym !== null && isset($localSym->refName)) {
+                    $localSym->refEnv->assign($localSym->refName, $localSym->valor);
+                }
+            }
+        }
+
         $visitor->env = $prevEnv;
 
         if ($result instanceof ReturnType) {
-            return $result->value;
+            $val = $result->value;
+            // múltiple retorno: envolver en ['__multi__' => [...]]
+            if (is_array($val) && count($this->returnTypes) > 1) {
+                return ['__multi__' => $val];
+            }
+            return $val;
         }
         return null;
     }

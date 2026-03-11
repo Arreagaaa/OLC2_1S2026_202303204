@@ -27,6 +27,10 @@ class Environment
     {
         if (array_key_exists($key, $this->values)) {
             $this->values[$key]->valor = $value;
+            // si el símbolo es un alias byRef, propagar al original
+            if (isset($this->values[$key]->refName)) {
+                $this->values[$key]->refEnv->assign($this->values[$key]->refName, $value);
+            }
             return;
         }
         if ($this->father !== null) {
@@ -64,6 +68,12 @@ class Environment
     public function existsLocal(string $key): bool
     {
         return array_key_exists($key, $this->values);
+    }
+
+    // devuelve el símbolo del scope actual (sin subir), o null si no existe
+    public function getLocal(string $key): ?Symbol
+    {
+        return $this->values[$key] ?? null;
     }
 
     // devuelve todos los simbolos declarados en este scope y descendientes
