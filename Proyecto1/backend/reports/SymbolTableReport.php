@@ -12,9 +12,15 @@ class SymbolTableReport
     {
         $rows = '';
         foreach ($symbols as $sym) {
-            $value = is_scalar($sym->valor)
-                ? htmlspecialchars((string) $sym->valor)
-                : (is_array($sym->valor) ? htmlspecialchars(json_encode($sym->valor)) : $sym->tipo);
+            if (is_bool($sym->valor)) {
+                $value = $sym->valor ? 'true' : 'false';
+            } elseif (is_scalar($sym->valor)) {
+                $value = htmlspecialchars((string) $sym->valor);
+            } elseif (is_array($sym->valor)) {
+                $value = htmlspecialchars(json_encode($sym->valor, JSON_PRESERVE_ZERO_FRACTION));
+            } else {
+                $value = $sym->tipo;
+            }
             $rows .= sprintf(
                 '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>%d</td></tr>',
                 htmlspecialchars($sym->id),

@@ -80,16 +80,6 @@ class FuncionUsuario extends Invocable
 
         $result = $visitor->visit($this->ctx->block());
 
-        // propagar cambios de parámetros byRef al entorno original
-        foreach ($this->params as $param) {
-            if ($param['byRef']) {
-                $localSym = $newEnv->getLocal($param['name']);
-                if ($localSym !== null && isset($localSym->refName)) {
-                    $localSym->refEnv->assign($localSym->refName, $localSym->valor);
-                }
-            }
-        }
-
         $visitor->env = $prevEnv;
 
         if ($result instanceof ReturnType) {

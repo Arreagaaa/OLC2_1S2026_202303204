@@ -516,6 +516,11 @@ class Interpreter extends \GolampiBaseVisitor
                 return null;
             }
             $arr[$index] = $value;
+            // si el simbolo es un parametro byRef, propagar el arreglo actualizado de inmediato
+            $sym = $this->env->get($name);
+            if ($sym->refName !== null) {
+                $sym->refEnv->assign($sym->refName, $arr);
+            }
         } catch (\RuntimeException $e) {
             $this->errors->addSemantic($e->getMessage(), $line, $col);
         }
@@ -535,6 +540,11 @@ class Interpreter extends \GolampiBaseVisitor
         try {
             $arr = &$this->env->getRef($name);
             $arr[$row][$col_i] = $value;
+            // si el simbolo es un parametro byRef, propagar el arreglo actualizado de inmediato
+            $sym = $this->env->get($name);
+            if ($sym->refName !== null) {
+                $sym->refEnv->assign($sym->refName, $arr);
+            }
         } catch (\RuntimeException $e) {
             $this->errors->addSemantic($e->getMessage(), $line, $col);
         }
@@ -785,9 +795,31 @@ class Interpreter extends \GolampiBaseVisitor
                 return null;
             }
 
-            $args = [];
+            $args       = [];
+            $funcParams = $sym->valor instanceof FuncionUsuario ? $sym->valor->params : [];
             if ($ctx->argList() !== null) {
-                $args = $this->visit($ctx->argList());
+                foreach ($ctx->argList()->expr() as $i => $exprNode) {
+                    $param = $funcParams[$i] ?? null;
+                    if ($param && $param['byRef'] && $exprNode instanceof IdExprContext) {
+                        // arg sin & pero el parametro espera referencia:
+                        // propagamos la referencia original si el simbolo ya es byRef
+                        $argName = $exprNode->ID()->getText();
+                        try {
+                            $argSym = $this->env->get($argName);
+                            if ($argSym->refName !== null) {
+                                // ya es un parametro byRef: propagamos la referencia original
+                                $args[] = ['__ref__' => $argSym->refName, '__env__' => $argSym->refEnv];
+                            } else {
+                                // variable normal: la convertimos en referencia
+                                $args[] = ['__ref__' => $argName, '__env__' => $this->env];
+                            }
+                        } catch (\RuntimeException $e) {
+                            $args[] = $this->visit($exprNode);
+                        }
+                    } else {
+                        $args[] = $this->visit($exprNode);
+                    }
+                }
             }
 
             if ($sym->valor->getArity() !== count($args)) {
