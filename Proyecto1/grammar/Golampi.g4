@@ -83,8 +83,8 @@ program
 
 topDecl
     : funcDecl                                              # TopFuncDecl
-    | varDecl SEMICOLON                                     # TopVarDecl
-    | constDecl SEMICOLON                                   # TopConstDecl
+    | varDecl SEMICOLON?                                    # TopVarDecl
+    | constDecl SEMICOLON?                                  # TopConstDecl
     ;
 
 // ─── declaraciones de función ─────────────────────────────────────────────────
@@ -115,23 +115,23 @@ block
     ;
 
 stmt
-    : varDecl SEMICOLON                                     # VarDeclStmt
-    | constDecl SEMICOLON                                   # ConstDeclStmt
-    | shortDecl SEMICOLON                                   # ShortDeclStmt
-    | assignment SEMICOLON                                  # AssignStmt
-    | compoundAssign SEMICOLON                              # CompoundAssignStmt
-    | RETURN exprList? SEMICOLON                            # ReturnStmt
-    | BREAK SEMICOLON                                       # BreakStmt
-    | CONTINUE SEMICOLON                                    # ContinueStmt
+    : varDecl SEMICOLON?                                    # VarDeclStmt
+    | constDecl SEMICOLON?                                  # ConstDeclStmt
+    | shortDecl SEMICOLON?                                  # ShortDeclStmt
+    | assignment SEMICOLON?                                 # AssignStmt
+    | compoundAssign SEMICOLON?                             # CompoundAssignStmt
+    | RETURN exprList? SEMICOLON?                           # ReturnStmt
+    | BREAK SEMICOLON?                                      # BreakStmt
+    | CONTINUE SEMICOLON?                                   # ContinueStmt
     | ifStmt                                                # IfStmtWrap
     | switchStmt                                            # SwitchStmtWrap
     | forStmt                                               # ForStmtWrap
-    | callExpr SEMICOLON                                    # CallStmt
-    | fmtPrintln SEMICOLON                                  # PrintlnStmt
-    | arrayAssign SEMICOLON                                 # ArrayAssignStmt
-    | ID INC SEMICOLON                                      # IncStmt
-    | ID DEC SEMICOLON                                      # DecStmt
-    | builtinCall SEMICOLON                                 # BuiltinStmt
+    | callExpr SEMICOLON?                                   # CallStmt
+    | fmtPrintln SEMICOLON?                                 # PrintlnStmt
+    | arrayAssign SEMICOLON?                                # ArrayAssignStmt
+    | ID INC SEMICOLON?                                     # IncStmt
+    | ID DEC SEMICOLON?                                     # DecStmt
+    | builtinCall SEMICOLON?                                # BuiltinStmt
     ;
 
 // ─── declaración de variables ──────────────────────────────────────────────────

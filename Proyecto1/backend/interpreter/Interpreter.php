@@ -425,11 +425,12 @@ class Interpreter extends \GolampiBaseVisitor
         }
 
         foreach ($ids as $i => $idNode) {
-            $name  = $idNode->getText();
-            $value = isset($exprs[$i]) ? $this->visit($exprs[$i]) : null;
-            $type  = $this->inferType($value);
-            $line  = $idNode->getSymbol()->getLine();
-            $col   = $idNode->getSymbol()->getCharPositionInLine();
+            $name     = $idNode->getText();
+            $exprNode = $exprs[$i] ?? null;
+            $value    = $exprNode !== null ? $this->visit($exprNode) : null;
+            $type     = $this->typeFromExprAst($exprNode) ?? $this->inferType($value);
+            $line     = $idNode->getSymbol()->getLine();
+            $col      = $idNode->getSymbol()->getCharPositionInLine();
 
             if ($this->env->existsLocal($name)) {
                 // re-asignacion permitida en short decl si ya existe en el mismo scope
@@ -1101,11 +1102,56 @@ class Interpreter extends \GolampiBaseVisitor
 
     public function visitBuiltinTypeOf(BuiltinTypeOfContext $ctx): mixed
     {
-        $val = $this->visit($ctx->expr());
-        return $this->inferType($val);
+        $exprNode = $ctx->expr();
+        // para una referencia directa a variable, devolver el tipo declarado del simbolo
+        if ($exprNode instanceof IdExprContext) {
+            $name = $exprNode->ID()->getText();
+            try {
+                return $this->env->get($name)->tipo;
+            } catch (\RuntimeException $e) {
+                // variable no encontrada, continuar con inferencia de valor
+            }
+        }
+        return $this->inferType($this->visit($exprNode));
     }
 
     // ─── utiles ───────────────────────────────────────────────────────────────
+
+    // determina el tipo Golampi a partir del nodo AST de la expresion (antes de evaluar)
+    // retorna null si no puede determinarlo (el llamador usa inferType como fallback)
+    private function typeFromExprAst(mixed $exprNode): ?string
+    {
+        if ($exprNode === null) return null;
+
+        // variable: propagar el tipo declarado del simbolo fuente
+        if ($exprNode instanceof IdExprContext) {
+            $name = $exprNode->ID()->getText();
+            try {
+                return $this->env->get($name)->tipo;
+            } catch (\RuntimeException $e) {
+                return null;
+            }
+        }
+
+        // literal primario
+        if ($exprNode instanceof PrimaryExprContext) {
+            $p = $exprNode->primary();
+            if ($p instanceof IntLitContext)   return 'int';
+            if ($p instanceof FloatLitContext) return 'float64';
+            if ($p instanceof RuneLitContext)  return 'int32';
+            if ($p instanceof TrueLitContext || $p instanceof FalseLitContext) return 'bool';
+            if ($p instanceof StringLitContext) return 'string';
+            if ($p instanceof ArrayLit1DContext) {
+                return '[' . $p->INT_LIT()->getText() . ']' . $p->typeRef()->getText();
+            }
+            if ($p instanceof ArrayLit2DContext) {
+                $dims = $p->INT_LIT();
+                return '[' . $dims[0]->getText() . '][' . $dims[1]->getText() . ']' . $p->typeRef()->getText();
+            }
+        }
+
+        return null;
+    }
 
     // valor por defecto segun tipo de Golampi (soporta tipos array como [5]int, [2][3]float32)
     private function defaultValue(string $type): mixed
