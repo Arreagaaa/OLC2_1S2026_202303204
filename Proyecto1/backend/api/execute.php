@@ -94,7 +94,6 @@ try {
 
         $symbols = $interpreter->getSymbolTable();
     }
-
 } catch (\Throwable $ex) {
     $errorHandler->addSemantic($ex->getMessage(), 0, 0);
 }
@@ -115,8 +114,9 @@ $symbolsJson = array_map(fn($s) => [
     'tipo'    => $s->tipo,
     'clase'   => $s->clase,
     'ambito'  => $s->ambito,
-    'valor'   => is_scalar($s->valor) ? (string) $s->valor
-                    : (is_array($s->valor) ? json_encode($s->valor) : $s->tipo),
+    'valor'   => is_bool($s->valor) ? ($s->valor ? 'true' : 'false')
+        : (is_scalar($s->valor) ? (string) $s->valor
+            : (is_array($s->valor) ? json_encode($s->valor) : $s->tipo)),
     'fila'    => $s->fila,
     'columna' => $s->columna,
 ], $symbols);

@@ -157,6 +157,7 @@ Proyecto1/
 | `test/test1/arreglos.go` | Arreglos 1D y 2D, funciones con matrices | Pasa |
 | `test/test1/funciones/embebidas.go` | len, typeOf, substr, now | Pasa |
 | `test/test1/funciones/funciones.go` | parametros, referencias, multi-retorno, recursion | Pasa |
+| `test/test1/funciones/test_recursivo.go` | fibonacci, potencia, hanoi, bubble sort byRef, MCD, primos | Pasa |
 
 ---
 
