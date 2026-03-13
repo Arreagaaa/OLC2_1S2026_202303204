@@ -50,10 +50,12 @@ $errorHandler = new ErrorHandler();
 class GolampiErrorListener extends \Antlr\Antlr4\Runtime\Error\Listeners\BaseErrorListener
 {
     private ErrorHandler $handler;
+    private string $errorType = 'Sintactico'; // por defecto
 
-    public function __construct(ErrorHandler $handler)
+    public function __construct(ErrorHandler $handler, string $errorType = 'Sintactico')
     {
         $this->handler = $handler;
+        $this->errorType = $errorType;
     }
 
     public function syntaxError(
@@ -64,7 +66,12 @@ class GolampiErrorListener extends \Antlr\Antlr4\Runtime\Error\Listeners\BaseErr
         string $msg,
         ?\Antlr\Antlr4\Runtime\Error\Exceptions\RecognitionException $e
     ): void {
-        $this->handler->addSyntax($msg, $line, $charPositionInLine);
+        // clasificar error: lexico si contiene "token recognition error", semantico si es otra cosa
+        $type = $this->errorType;
+        if (strpos($msg, 'token recognition error') !== false) {
+            $type = 'Lexico';
+        }
+        $this->handler->addError($type, $msg, $line, $charPositionInLine);
     }
 }
 
@@ -73,12 +80,14 @@ try {
 
     $lexer  = new GolampiLexer($inputStream);
     $lexer->removeErrorListeners();
-    $lexer->addErrorListener(new GolampiErrorListener($errorHandler));
+    // errores del lexer son clasificados como léxicos
+    $lexer->addErrorListener(new GolampiErrorListener($errorHandler, 'Lexico'));
 
     $tokens = new CommonTokenStream($lexer);
     $parser = new GolampiParser($tokens);
     $parser->removeErrorListeners();
-    $parser->addErrorListener(new GolampiErrorListener($errorHandler));
+    // errores del parser son clasificados como sintácticos (si no son "token recognition error")
+    $parser->addErrorListener(new GolampiErrorListener($errorHandler, 'Sintactico'));
 
     // regla de inicio
     $tree = $parser->program();

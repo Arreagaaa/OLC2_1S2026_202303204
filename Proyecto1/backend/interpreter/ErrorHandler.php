@@ -27,6 +27,18 @@ class ErrorHandler
         $this->errors[] = new ErrorEntry(ErrorEntry::SINTACTICO, $desc, $fila, $col);
     }
 
+    // agrega un error con tipo especifico (lexico, sintactico o semantico)
+    public function addError(string $tipo, string $desc, int $fila, int $col): void
+    {
+        $tipoMap = [
+            'Lexico' => ErrorEntry::LEXICO,
+            'Sintactico' => ErrorEntry::SINTACTICO,
+            'Semantico' => ErrorEntry::SEMANTICO,
+        ];
+        $constantTipo = $tipoMap[$tipo] ?? ErrorEntry::SINTACTICO;
+        $this->errors[] = new ErrorEntry($constantTipo, $desc, $fila, $col);
+    }
+
     public function getErrors(): array
     {
         return $this->errors;

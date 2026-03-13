@@ -164,6 +164,8 @@ class Interpreter extends \GolampiBaseVisitor
     public function visitFunctionDeclaration(FunctionDeclarationContext $ctx): mixed
     {
         $name   = $ctx->ID()->getText();
+        $line   = $ctx->ID()->getSymbol()->getLine();
+        $col    = $ctx->ID()->getSymbol()->getCharPositionInLine();
         $params = [];
 
         if ($ctx->paramList() !== null) {
@@ -184,6 +186,23 @@ class Interpreter extends \GolampiBaseVisitor
             }
         }
 
+        // validar restricciones de main: sin parametros, sin retorno, unica
+        if ($name === 'main') {
+            if (count($params) > 0) {
+                $this->errors->addSemantic('La funcion main() no puede tener parametros.', $line, $col);
+                return null;
+            }
+            if (count($returnTypes) > 0) {
+                $this->errors->addSemantic('La funcion main() no puede retornar valores.', $line, $col);
+                return null;
+            }
+            // verificar que no haya otra main ya registrada
+            if ($this->globalEnv->getLocal('main') !== null) {
+                $this->errors->addSemantic('La funcion main() ya fue declarada. Solo puede existir una.', $line, $col);
+                return null;
+            }
+        }
+
         $funcion = new FuncionUsuario($ctx, $this->env, $params, $returnTypes);
 
         $sym = new Symbol(
@@ -192,8 +211,8 @@ class Interpreter extends \GolampiBaseVisitor
             $funcion,
             Symbol::CLASE_FUNCION,
             'global',
-            $ctx->ID()->getSymbol()->getLine(),
-            $ctx->ID()->getSymbol()->getCharPositionInLine()
+            $line,
+            $col
         );
 
         $this->env->declare($name, $sym);
@@ -367,6 +386,16 @@ class Interpreter extends \GolampiBaseVisitor
                 ? $this->visit($exprs[$i])
                 : $this->defaultValue($type);
 
+            // validar compatibilidad de tipos si se proporciono expresion
+            if (isset($exprs[$i]) && !$this->isTypeCompatible($type, $value)) {
+                $valueType = $this->inferType($value);
+                $this->errors->addSemantic(
+                    "Incompatibilidad de tipos: se esperaba '$type' pero se obtuvo '$valueType'.",
+                    $line, $col
+                );
+                continue;
+            }
+
             $sym = new Symbol($name, $type, $value, Symbol::CLASE_VARIABLE, 'local', $line, $col);
             $this->env->declare($name, $sym);
             $this->symbolTable[] = $sym;
@@ -388,6 +417,16 @@ class Interpreter extends \GolampiBaseVisitor
             return null;
         }
 
+        // validar compatibilidad de tipos
+        if (!$this->isTypeCompatible($type, $value)) {
+            $valueType = $this->inferType($value);
+            $this->errors->addSemantic(
+                "Incompatibilidad de tipos: se esperaba '$type' pero se obtuvo '$valueType'.",
+                $line, $col
+            );
+            return null;
+        }
+
         $sym = new Symbol($name, $type, $value, Symbol::CLASE_CONSTANTE, 'local', $line, $col);
         $this->env->declare($name, $sym);
         $this->symbolTable[] = $sym;
@@ -406,6 +445,7 @@ class Interpreter extends \GolampiBaseVisitor
             // si la función retornó un array marcado como multi-return
             if (is_array($result) && isset($result['__multi__'])) {
                 $values = $result['__multi__'];
+                $hasNewVar = false; // validar que al menos una es nueva
                 foreach ($ids as $i => $idNode) {
                     $name  = $idNode->getText();
                     $value = $values[$i] ?? null;
@@ -416,12 +456,37 @@ class Interpreter extends \GolampiBaseVisitor
                         $this->env->assign($name, $value);
                         continue;
                     }
+                    $hasNewVar = true;
                     $sym = new Symbol($name, $type, $value, Symbol::CLASE_VARIABLE, 'local', $line, $col);
                     $this->env->declare($name, $sym);
                     $this->symbolTable[] = $sym;
                 }
+                if (!$hasNewVar) {
+                    $this->errors->addSemantic(
+                        'La declaracion corta := debe declarar al menos una variable nueva.',
+                        $ids[0]->getSymbol()->getLine(),
+                        $ids[0]->getSymbol()->getCharPositionInLine()
+                    );
+                }
                 return null;
             }
+        }
+
+        // validar que al menos una variable sea nueva
+        $hasNewVar = false;
+        foreach ($ids as $idNode) {
+            if (!$this->env->existsLocal($idNode->getText())) {
+                $hasNewVar = true;
+                break;
+            }
+        }
+        if (!$hasNewVar) {
+            $this->errors->addSemantic(
+                'La declaracion corta := debe declarar al menos una variable nueva.',
+                $ids[0]->getSymbol()->getLine(),
+                $ids[0]->getSymbol()->getCharPositionInLine()
+            );
+            return null;
         }
 
         foreach ($ids as $i => $idNode) {
@@ -787,6 +852,12 @@ class Interpreter extends \GolampiBaseVisitor
         $name = $ctx->ID()->getText();
         $line = $ctx->ID()->getSymbol()->getLine();
         $col  = $ctx->ID()->getSymbol()->getCharPositionInLine();
+
+        // prevenir llamada explicita a main()
+        if ($name === 'main') {
+            $this->errors->addSemantic('La funcion main() no puede ser llamada explicitamente.', $line, $col);
+            return null;
+        }
 
         try {
             $sym = $this->env->get($name);
@@ -1256,6 +1327,45 @@ class Interpreter extends \GolampiBaseVisitor
     {
         $this->errors->addSemantic("Division por cero en '$id'.", $line, $col);
         return null;
+    }
+
+    // validar compatibilidad de tipos en asignaciones y declaraciones
+    private function isTypeCompatible(string $declaredType, mixed $value): bool
+    {
+        // nil es siempre incompatible en declaraciones tipadas (a menos que sea opcional)
+        if ($value === null) {
+            return false; // no permitir asignar nil a variable tipada
+        }
+
+        // chequear si el valor es un array y el tipo declarado es un array
+        if (is_array($value)) {
+            // si el tipo declarado comienza con '[', es un tipo array
+            return strpos(trim($declaredType), '[') === 0;
+        }
+
+        // mapear tipos de Golampi a tipos PHP para validacion
+        $declaredType = strtolower(trim($declaredType));
+        $actualType = null;
+
+        if (is_bool($value))   $actualType = 'bool';
+        elseif (is_int($value))    $actualType = 'int32';
+        elseif (is_float($value))  $actualType = 'float32';
+        elseif (is_string($value)) $actualType = 'string';
+
+        // permitir promociones: int32 -> rune, int (ambiguos), int64, float64
+        $compatibleTypes = [
+            'int32' => ['int32', 'rune', 'int', 'int64'],
+            'float32' => ['float32', 'float64'],
+            'bool' => ['bool'],
+            'rune' => ['rune', 'int32', 'int', 'int64'],
+            'string' => ['string'],
+        ];
+
+        if (isset($compatibleTypes[$declaredType])) {
+            return in_array($actualType, $compatibleTypes[$declaredType]);
+        }
+
+        return false;
     }
 
     public function getSymbolTable(): array
