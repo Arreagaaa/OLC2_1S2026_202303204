@@ -14,6 +14,7 @@ use Context\BlockStmtContext;
 use Context\VarDeclStmtContext;
 use Context\ConstDeclStmtContext;
 use Context\ShortDeclStmtContext;
+use Context\BlockOnlyStmtContext;
 use Context\AssignStmtContext;
 use Context\CompoundAssignStmtContext;
 use Context\ReturnStmtContext;
@@ -43,12 +44,15 @@ use Context\ForPostCompoundContext;
 use Context\ForPostIncContext;
 use Context\ForPostDecContext;
 use Context\VarDeclSimpleContext;
+use Context\VarDeclInferContext;
 use Context\ConstDeclRuleContext;
 use Context\ShortDeclRuleContext;
 use Context\SimpleAssignContext;
+use Context\DerefAssignContext;
 use Context\CompoundAssignRuleContext;
 use Context\ArrayAssign1DContext;
 use Context\ArrayAssign2DContext;
+use Context\ArrayAssign3DContext;
 
 use Context\PrimaryExprContext;
 use Context\IdExprContext;
@@ -56,8 +60,10 @@ use Context\CallExprWrapContext;
 use Context\FmtPrintlnExprContext;
 use Context\ArrayAccess1DContext;
 use Context\ArrayAccess2DContext;
+use Context\ArrayAccess3DContext;
 use Context\RefExprContext;
 use Context\DerefExprContext;
+use Context\CastExprContext;
 use Context\GroupExprContext;
 use Context\NotExprContext;
 use Context\NegExprContext;
@@ -76,6 +82,7 @@ use Context\FalseLitContext;
 use Context\NilLitContext;
 use Context\ArrayLit1DContext;
 use Context\ArrayLit2DContext;
+use Context\ArrayLit3DContext;
 
 use Context\UserFuncCallContext;
 use Context\FmtPrintlnCallContext;
@@ -310,6 +317,11 @@ class Interpreter extends \GolampiBaseVisitor
         return $this->visit($ctx->arrayAssign());
     }
 
+    public function visitBlockOnlyStmt(BlockOnlyStmtContext $ctx): mixed
+    {
+        return $this->visit($ctx->block());
+    }
+
     public function visitIncStmt(IncStmtContext $ctx): mixed
     {
         $name = $ctx->ID()->getText();
@@ -393,6 +405,57 @@ class Interpreter extends \GolampiBaseVisitor
                     "Incompatibilidad de tipos: se esperaba '$type' pero se obtuvo '$valueType'.",
                     $line, $col
                 );
+                continue;
+            }
+
+            $sym = new Symbol($name, $type, $value, Symbol::CLASE_VARIABLE, 'local', $line, $col);
+            $this->env->declare($name, $sym);
+            $this->symbolTable[] = $sym;
+        }
+
+        return null;
+    }
+
+    public function visitVarDeclInfer(VarDeclInferContext $ctx): mixed
+    {
+        $ids   = $ctx->idList()->ID();
+        $exprs = $ctx->exprList()->expr();
+
+        // Caso especial: var a, b, c = f() con retorno múltiple.
+        if (count($ids) > 1 && count($exprs) === 1) {
+            $result = $this->visit($exprs[0]);
+            if (is_array($result) && isset($result['__multi__'])) {
+                $values = $result['__multi__'];
+                foreach ($ids as $i => $idNode) {
+                    $name  = $idNode->getText();
+                    $line  = $idNode->getSymbol()->getLine();
+                    $col   = $idNode->getSymbol()->getCharPositionInLine();
+                    $value = $values[$i] ?? null;
+                    $type  = $this->inferType($value);
+
+                    if ($this->env->existsLocal($name)) {
+                        $this->errors->addSemantic("Variable '$name' ya declarada en este scope.", $line, $col);
+                        continue;
+                    }
+
+                    $sym = new Symbol($name, $type, $value, Symbol::CLASE_VARIABLE, 'local', $line, $col);
+                    $this->env->declare($name, $sym);
+                    $this->symbolTable[] = $sym;
+                }
+                return null;
+            }
+        }
+
+        foreach ($ids as $i => $idNode) {
+            $name     = $idNode->getText();
+            $exprNode = $exprs[$i] ?? null;
+            $value    = $exprNode !== null ? $this->visit($exprNode) : null;
+            $type     = $this->typeFromExprAst($exprNode) ?? $this->inferType($value);
+            $line     = $idNode->getSymbol()->getLine();
+            $col      = $idNode->getSymbol()->getCharPositionInLine();
+
+            if ($this->env->existsLocal($name)) {
+                $this->errors->addSemantic("Variable '$name' ya declarada en este scope.", $line, $col);
                 continue;
             }
 
@@ -534,6 +597,36 @@ class Interpreter extends \GolampiBaseVisitor
         return null;
     }
 
+    public function visitDerefAssign(DerefAssignContext $ctx): mixed
+    {
+        $name  = $ctx->ID()->getText();
+        $value = $this->visit($ctx->expr());
+        $line  = $ctx->ID()->getSymbol()->getLine();
+        $col   = $ctx->ID()->getSymbol()->getCharPositionInLine();
+
+        try {
+            $sym = $this->env->get($name);
+
+            // Caso 1: parámetro byRef (refName/refEnv apunta al símbolo original).
+            if ($sym->refName !== null && $sym->refEnv !== null) {
+                $sym->refEnv->assign($sym->refName, $value);
+                return null;
+            }
+
+            // Caso 2: puntero explícito guardado como {'__ref__', '__env__'}.
+            if (is_array($sym->valor) && isset($sym->valor['__ref__'], $sym->valor['__env__'])) {
+                $sym->valor['__env__']->assign($sym->valor['__ref__'], $value);
+                return null;
+            }
+
+            $this->errors->addSemantic("'$name' no es una referencia asignable.", $line, $col);
+        } catch (\RuntimeException $e) {
+            $this->errors->addSemantic($e->getMessage(), $line, $col);
+        }
+
+        return null;
+    }
+
     public function visitCompoundAssignRule(CompoundAssignRuleContext $ctx): mixed
     {
         $name  = $ctx->ID()->getText();
@@ -606,6 +699,31 @@ class Interpreter extends \GolampiBaseVisitor
             $arr = &$this->env->getRef($name);
             $arr[$row][$col_i] = $value;
             // si el simbolo es un parametro byRef, propagar el arreglo actualizado de inmediato
+            $sym = $this->env->get($name);
+            if ($sym->refName !== null) {
+                $sym->refEnv->assign($sym->refName, $arr);
+            }
+        } catch (\RuntimeException $e) {
+            $this->errors->addSemantic($e->getMessage(), $line, $col);
+        }
+
+        return null;
+    }
+
+    public function visitArrayAssign3D(ArrayAssign3DContext $ctx): mixed
+    {
+        $name  = $ctx->ID()->getText();
+        $i     = (int) $this->visit($ctx->expr(0));
+        $j     = (int) $this->visit($ctx->expr(1));
+        $k     = (int) $this->visit($ctx->expr(2));
+        $value = $this->visit($ctx->expr(3));
+        $line  = $ctx->ID()->getSymbol()->getLine();
+        $col   = $ctx->ID()->getSymbol()->getCharPositionInLine();
+
+        try {
+            $arr = &$this->env->getRef($name);
+            $arr[$i][$j][$k] = $value;
+
             $sym = $this->env->get($name);
             if ($sym->refName !== null) {
                 $sym->refEnv->assign($sym->refName, $arr);
@@ -913,6 +1031,23 @@ class Interpreter extends \GolampiBaseVisitor
         return $this->visit($ctx->callExpr());
     }
 
+    public function visitCastExpr(CastExprContext $ctx): mixed
+    {
+        $target = $ctx->typeRef()->getText();
+        $value  = $this->visit($ctx->expr());
+
+        return match ($target) {
+            'int', 'int32', 'int64' => (int) $value,
+            'float32', 'float64'    => (float) $value,
+            'bool'                  => (bool) $value,
+            'string'                => is_null($value) ? '' : (string) $value,
+            'rune'                  => is_string($value)
+                ? (strlen($value) > 0 ? ord($value[0]) : 0)
+                : (int) $value,
+            default                 => $value,
+        };
+    }
+
     public function visitArgList(ArgListContext $ctx): array
     {
         return array_map(fn($e) => $this->visit($e), $ctx->expr());
@@ -1128,6 +1263,28 @@ class Interpreter extends \GolampiBaseVisitor
         return $result;
     }
 
+    public function visitArrayLit3D(ArrayLit3DContext $ctx): mixed
+    {
+        // INT_LIT(0)=d1, INT_LIT(1)=d2, INT_LIT(2)=d3; expr() llega en orden lineal.
+        $d1     = (int) $ctx->INT_LIT(0)->getText();
+        $d2     = (int) $ctx->INT_LIT(1)->getText();
+        $d3     = (int) $ctx->INT_LIT(2)->getText();
+        $flat   = array_map(fn($e) => $this->visit($e), $ctx->expr());
+        $result = [];
+        $idx    = 0;
+
+        for ($i = 0; $i < $d1; $i++) {
+            $plane = [];
+            for ($j = 0; $j < $d2; $j++) {
+                $plane[] = array_slice($flat, $idx, $d3);
+                $idx += $d3;
+            }
+            $result[] = $plane;
+        }
+
+        return $result;
+    }
+
     // ─── acceso a arreglos ────────────────────────────────────────────────────
 
     public function visitArrayAccess1D(ArrayAccess1DContext $ctx): mixed
@@ -1157,6 +1314,24 @@ class Interpreter extends \GolampiBaseVisitor
         try {
             $arr = $this->env->get($name)->valor;
             return $arr[$row][$col_i] ?? null;
+        } catch (\RuntimeException $e) {
+            $this->errors->addSemantic($e->getMessage(), $line, $col);
+            return null;
+        }
+    }
+
+    public function visitArrayAccess3D(ArrayAccess3DContext $ctx): mixed
+    {
+        $name = $ctx->ID()->getText();
+        $i    = (int) $this->visit($ctx->expr(0));
+        $j    = (int) $this->visit($ctx->expr(1));
+        $k    = (int) $this->visit($ctx->expr(2));
+        $line = $ctx->ID()->getSymbol()->getLine();
+        $col  = $ctx->ID()->getSymbol()->getCharPositionInLine();
+
+        try {
+            $arr = $this->env->get($name)->valor;
+            return $arr[$i][$j][$k] ?? null;
         } catch (\RuntimeException $e) {
             $this->errors->addSemantic($e->getMessage(), $line, $col);
             return null;
@@ -1206,14 +1381,9 @@ class Interpreter extends \GolampiBaseVisitor
     public function visitBuiltinTypeOf(BuiltinTypeOfContext $ctx): mixed
     {
         $exprNode = $ctx->expr();
-        // para una referencia directa a variable, devolver el tipo declarado del simbolo
-        if ($exprNode instanceof IdExprContext) {
-            $name = $exprNode->ID()->getText();
-            try {
-                return $this->env->get($name)->tipo;
-            } catch (\RuntimeException $e) {
-                // variable no encontrada, continuar con inferencia de valor
-            }
+        $astType = $this->typeFromExprAst($exprNode);
+        if ($astType !== null) {
+            return $astType;
         }
         return $this->inferType($this->visit($exprNode));
     }
@@ -1225,6 +1395,10 @@ class Interpreter extends \GolampiBaseVisitor
     private function typeFromExprAst(mixed $exprNode): ?string
     {
         if ($exprNode === null) return null;
+
+        if ($exprNode instanceof CastExprContext) {
+            return $exprNode->typeRef()->getText();
+        }
 
         // variable: propagar el tipo declarado del simbolo fuente
         if ($exprNode instanceof IdExprContext) {
@@ -1250,6 +1424,10 @@ class Interpreter extends \GolampiBaseVisitor
             if ($p instanceof ArrayLit2DContext) {
                 $dims = $p->INT_LIT();
                 return '[' . $dims[0]->getText() . '][' . $dims[1]->getText() . ']' . $p->typeRef()->getText();
+            }
+            if ($p instanceof ArrayLit3DContext) {
+                $dims = $p->INT_LIT();
+                return '[' . $dims[0]->getText() . '][' . $dims[1]->getText() . '][' . $dims[2]->getText() . ']' . $p->typeRef()->getText();
             }
         }
 
@@ -1281,8 +1459,8 @@ class Interpreter extends \GolampiBaseVisitor
     public function inferType(mixed $value): string
     {
         if (is_bool($value))   return 'bool';   // antes de is_int porque bool es subtype de int en PHP
-        if (is_int($value))    return 'int32';
-        if (is_float($value))  return 'float32';
+        if (is_int($value))    return 'int';
+        if (is_float($value))  return 'float64';
         if (is_string($value)) return 'string';
         if (is_array($value)) {
             $count = count($value);
@@ -1301,12 +1479,12 @@ class Interpreter extends \GolampiBaseVisitor
         foreach ($arr as $v) {
             if (!is_array($v)) {
                 if (is_bool($v))   return 'bool';
-                if (is_int($v))    return 'int32';
-                if (is_float($v))  return 'float32';
+                if (is_int($v))    return 'int';
+                if (is_float($v))  return 'float64';
                 if (is_string($v)) return 'string';
             }
         }
-        return 'int32';
+        return 'int';
     }
 
     // convierte un valor PHP a string para impresion
