@@ -36,6 +36,39 @@ $body = file_get_contents('php://input');
 $data = json_decode($body, true);
 $codigo = trim($data['codigo'] ?? '');
 
+// soporte minimo para modificacion presencial: for (i in x..y) inclusivo
+function normalizeRangeForLoop(string $code): string
+{
+    return preg_replace_callback(
+        '/for\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+in\s+([^\.\n\r]+)\.\.([^\{\n\r]+)\s*\{/m',
+        function (array $m): string {
+            $id = trim($m[1]);
+            $start = trim($m[2]);
+            $end = trim($m[3]);
+            return "for {$id} := {$start}; {$id} <= {$end}; {$id}++ {";
+        },
+        $code
+    );
+}
+
+// si el usuario pega solo sentencias (ej. for/if/fmt.Println), envolver en main
+function ensureMainWrapper(string $code): string
+{
+    if (preg_match('/\bfunc\s+main\s*\(/', $code)) {
+        return $code;
+    }
+
+    // si ya hay declaraciones de alto nivel, no forzar wrapper
+    if (preg_match('/^\s*(func|var|const)\b/m', $code)) {
+        return $code;
+    }
+
+    return "func main(){\n" . $code . "\n}";
+}
+
+$codigo = normalizeRangeForLoop($codigo);
+$codigo = ensureMainWrapper($codigo);
+
 if ($codigo === '') {
     echo json_encode(['output' => '', 'errors' => [], 'symbols' => [], 'errorsHtml' => '', 'symbolsHtml' => '']);
     exit;
