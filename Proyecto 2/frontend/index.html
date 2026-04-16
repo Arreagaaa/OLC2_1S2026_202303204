@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Golampi Compiler</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <header class="toolbar">
+        <span class="toolbar-title">Golampi Compiler</span>
+        <div class="toolbar-actions">
+            <button id="btn-run">Compilar</button>
+            <button id="btn-open">Abrir archivo</button>
+            <button id="btn-save">Guardar</button>
+            <button id="btn-clear-editor">Limpiar editor</button>
+            <button id="btn-clear-console">Limpiar consola</button>
+        </div>
+        <input type="file" id="file-input" accept=".gol,.txt" style="display:none">
+    </header>
+
+    <main class="workspace">
+
+        <section class="editor-panel">
+            <div class="panel-label">Editor</div>
+            <div class="editor-container">
+                <div class="line-numbers" id="lineNumbers">1</div>
+                <textarea
+                    id="editor"
+                    spellcheck="false"
+                    placeholder="// escriba codigo Golampi aqui...
+func main() {
+    fmt.Println(&quot;Hola mundo&quot;)
+}"
+                ></textarea>
+            </div>
+        </section>
+
+        <section class="output-panel">
+
+            <div class="console-section">
+                <div class="panel-label">Consola - Codigo ARM64 Generado</div>
+                <div class="console" id="console"></div>
+            </div>
+
+            <div class="reports-section">
+                <div class="panel-label">
+                    Reportes
+                    <button id="btn-report-symbols">Tabla de simbolos</button>
+                    <button id="btn-report-errors">Tabla de errores</button>
+                    <button id="btn-download-arm64">Descargar ARM64</button>
+                    <button id="btn-download-symbols">Descargar simbolos</button>
+                    <button id="btn-download-errors">Descargar errores</button>
+                </div>
+                <div class="report-view" id="report-view">
+                    <span class="report-placeholder">Ejecuta el codigo para ver reportes.</span>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <script src="js/editor.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/reports.js"></script>
+
+</body>
+</html>

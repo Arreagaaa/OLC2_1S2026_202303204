@@ -1,0 +1,16 @@
+{
+    "require": {
+        "antlr/antlr4-php-runtime": "^0.9.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\Models\\": "backend/models/",
+            "App\\Interpreter\\": "backend/interpreter/",
+            "App\\Arm64\\": "backend/arm64/",
+            "App\\Reports\\": "backend/reports/"
+        },
+        "classmap": [
+            "backend/generated/"
+        ]
+    }
+}

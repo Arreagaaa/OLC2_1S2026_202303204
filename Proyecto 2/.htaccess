@@ -1,0 +1,8 @@
+RewriteEngine On
+
+# redirige la raiz al frontend
+RewriteRule ^$ frontend/index.html [L]
+
+# permite acceso directo a archivos existentes
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule .* - [L]

@@ -1,0 +1,208 @@
+/* reset y base */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: #0d1117;
+    color: #e2e8f0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* barra de herramientas superior */
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background-color: #070d16;
+    border-bottom: 1px solid #1e3a5f;
+    flex-shrink: 0;
+}
+
+.toolbar-title {
+    font-weight: bold;
+    font-size: 15px;
+    color: #facc15;
+    margin-right: auto;
+}
+
+.toolbar-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.toolbar button,
+.toolbar-actions button {
+    background-color: #112240;
+    color: #e2e8f0;
+    border: 1px solid #1e3a5f;
+    border-radius: 5px;
+    padding: 5px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background-color 0.15s;
+}
+
+.toolbar button:hover,
+.toolbar-actions button:hover {
+    background-color: #1d4ed8;
+}
+
+/* area principal: editor + salida */
+.workspace {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    gap: 0;
+}
+
+/* panel del editor */
+.editor-panel {
+    display: flex;
+    flex-direction: column;
+    width: 50%;
+    border-right: 1px solid #1e3a5f;
+}
+
+/* panel de salida */
+.output-panel {
+    display: flex;
+    flex-direction: column;
+    width: 50%;
+}
+
+/* etiquetas de panel */
+.panel-label {
+    background-color: #070d16;
+    color: #7ea8c9;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-bottom: 1px solid #1e3a5f;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.panel-label button {
+    background-color: #0f2040;
+    color: #93c5fd;
+    border: 1px solid #1e3a5f;
+    border-radius: 4px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.panel-label button:hover {
+    background-color: #1d3d6e;
+}
+
+/* contenedor del editor con numeros de linea */
+.editor-container {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    background-color: #0d1926;
+}
+
+.line-numbers {
+    background-color: #091422;
+    color: #2e5a8a;
+    font-family: monospace;
+    font-size: 13px;
+    text-align: right;
+    padding: 10px 6px;
+    user-select: none;
+    white-space: pre;
+    line-height: 1.5em;
+    min-width: 36px;
+    overflow: hidden;
+}
+
+textarea#editor {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: none;
+    color: #e2e8f0;
+    font-family: monospace;
+    font-size: 13px;
+    line-height: 1.5em;
+    padding: 10px;
+    resize: none;
+    tab-size: 4;
+}
+
+/* consola de salida */
+.console-section {
+    display: flex;
+    flex-direction: column;
+    height: 55%;
+    border-bottom: 1px solid #1e3a5f;
+}
+
+.console {
+    flex: 1;
+    background-color: #060c18;
+    font-family: monospace;
+    font-size: 13px;
+    padding: 10px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #c7f9cc;
+}
+
+/* panel de reportes */
+.reports-section {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+}
+
+.report-view {
+    flex: 1;
+    overflow: auto;
+    padding: 10px;
+    font-size: 12px;
+    background-color: #0a1628;
+}
+
+.report-placeholder {
+    color: #2e5a8a;
+    font-style: italic;
+}
+
+/* tablas de reporte */
+.report-view table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 12px;
+}
+
+.report-view th {
+    background-color: #0f2a4a;
+    color: #93c5fd;
+    padding: 4px 8px;
+    text-align: left;
+    border: 1px solid #1e3a5f;
+}
+
+.report-view td {
+    padding: 3px 8px;
+    border: 1px solid #1a3050;
+    color: #cbd5e1;
+}
+
+.report-view tr:nth-child(even) td {
+    background-color: #0b1e35;
+}
