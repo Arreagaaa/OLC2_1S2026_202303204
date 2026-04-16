@@ -114,7 +114,7 @@ try {
 
         $symbols = $visitor->getSymbolTable();
 
-        $codegen = new CodeGen($output);
+        $codegen = new CodeGen($codigo, $output);
         $arm64Code = $codegen->generateProgram();
     }
 } catch (\Throwable $ex) {
