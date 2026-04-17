@@ -22,6 +22,10 @@ class CodeGen
     /** @var array<string, array{type:string, offset:int}> */
     private array $variables = [];
     private int $nextOffset = 0;
+    private string $functionEndLabel = '_start_end';
+
+    /** @var array<int, array{break:string, continue:string}> */
+    private array $loopStack = [];
 
     /** @var array<string, string> */
     private array $stringPool = [];
@@ -119,6 +123,7 @@ class CodeGen
         }
 
         // epilogo _start
+        $this->emitter->emitLabel($this->functionEndLabel);
         $this->emitter->emit('add sp, sp, #' . self::LOCAL_STACK_SIZE);
         $this->emitter->emit('ldp x29, x30, [sp], #16');
 
@@ -152,6 +157,71 @@ class CodeGen
 
     private function compileStmt(object $stmt): void
     {
+        if ($stmt instanceof \Context\BreakStmtContext) {
+            if (empty($this->loopStack)) {
+                throw new \RuntimeException('break fuera de un ciclo.');
+            }
+            $target = $this->loopStack[count($this->loopStack) - 1]['break'];
+            $this->emitter->emit('b ' . $target);
+            return;
+        }
+
+        if ($stmt instanceof \Context\ContinueStmtContext) {
+            if (empty($this->loopStack)) {
+                throw new \RuntimeException('continue fuera de un ciclo.');
+            }
+            $target = $this->loopStack[count($this->loopStack) - 1]['continue'];
+            $this->emitter->emit('b ' . $target);
+            return;
+        }
+
+        if ($stmt instanceof \Context\ReturnStmtContext) {
+            $this->emitter->emit('b ' . $this->functionEndLabel);
+            return;
+        }
+
+        if ($stmt instanceof \Context\IncStmtContext) {
+            $name = $stmt->ID()->getText();
+            if (!isset($this->variables[$name])) {
+                throw new \RuntimeException("Variable '$name' no declarada para incremento.");
+            }
+            $this->loadVarToX0($name);
+            $this->emitter->emit('add x0, x0, #1');
+            $this->storeScalarFromX0($name);
+            return;
+        }
+
+        if ($stmt instanceof \Context\DecStmtContext) {
+            $name = $stmt->ID()->getText();
+            if (!isset($this->variables[$name])) {
+                throw new \RuntimeException("Variable '$name' no declarada para decremento.");
+            }
+            $this->loadVarToX0($name);
+            $this->emitter->emit('sub x0, x0, #1');
+            $this->storeScalarFromX0($name);
+            return;
+        }
+
+        if (method_exists($stmt, 'ifStmt') && $stmt->ifStmt() !== null) {
+            $this->compileIfStmt($stmt->ifStmt());
+            return;
+        }
+
+        if (method_exists($stmt, 'switchStmt') && $stmt->switchStmt() !== null) {
+            $this->compileSwitchStmt($stmt->switchStmt());
+            return;
+        }
+
+        if (method_exists($stmt, 'forStmt') && $stmt->forStmt() !== null) {
+            $this->compileForStmt($stmt->forStmt());
+            return;
+        }
+
+        if (method_exists($stmt, 'arrayAssign') && $stmt->arrayAssign() !== null) {
+            $this->compileArrayAssign($stmt->arrayAssign());
+            return;
+        }
+
         if (method_exists($stmt, 'varDecl') && $stmt->varDecl() !== null) {
             $this->compileVarDecl($stmt->varDecl());
             return;
@@ -177,7 +247,186 @@ class CodeGen
             return;
         }
 
-        throw new \RuntimeException('Sentencia fuera del alcance Sprint 2.');
+        throw new \RuntimeException('Sentencia fuera del alcance Sprint 3.');
+    }
+
+    private function compileBlock(object $block): void
+    {
+        foreach ($block->stmt() as $stmt) {
+            $this->compileStmt($stmt);
+        }
+    }
+
+    private function compileIfStmt(object $ifStmt): void
+    {
+        $elseLabel = $this->labels->next('L_ELSE');
+        $endLabel = $this->labels->next('L_ENDIF');
+
+        $this->compileExpr($ifStmt->expr());
+        $this->emitter->emit('cmp x0, #0');
+
+        $hasElseIf = method_exists($ifStmt, 'ifStmt') && $ifStmt->ifStmt() !== null;
+        $hasElseBlock = method_exists($ifStmt, 'block') && count($ifStmt->block()) > 1;
+        $hasElse = $hasElseIf || $hasElseBlock;
+
+        $this->emitter->emit('b.eq ' . ($hasElse ? $elseLabel : $endLabel));
+        $this->compileBlock($ifStmt->block(0));
+
+        if ($hasElse) {
+            $this->emitter->emit('b ' . $endLabel);
+            $this->emitter->emitLabel($elseLabel);
+            if ($hasElseIf) {
+                $this->compileIfStmt($ifStmt->ifStmt());
+            } else {
+                $this->compileBlock($ifStmt->block(1));
+            }
+        }
+
+        $this->emitter->emitLabel($endLabel);
+    }
+
+    private function compileSwitchStmt(object $switchStmt): void
+    {
+        $endLabel = $this->labels->next('L_SWITCH_END');
+
+        if ($switchStmt->expr() !== null) {
+            $this->compileExpr($switchStmt->expr());
+        } else {
+            $this->emitter->emit('mov x0, #1');
+        }
+        $this->emitter->emit('mov x20, x0');
+
+        $defaultClause = null;
+
+        foreach ($switchStmt->caseClause() as $caseClause) {
+            if ($caseClause instanceof \Context\DefaultClauseContext) {
+                $defaultClause = $caseClause;
+                continue;
+            }
+
+            $bodyLabel = $this->labels->next('L_CASE_BODY');
+            $nextLabel = $this->labels->next('L_CASE_NEXT');
+
+            foreach ($caseClause->exprList()->expr() as $expr) {
+                $this->compileExpr($expr);
+                $this->emitter->emit('cmp x20, x0');
+                $this->emitter->emit('b.eq ' . $bodyLabel);
+            }
+
+            $this->emitter->emit('b ' . $nextLabel);
+            $this->emitter->emitLabel($bodyLabel);
+            foreach ($caseClause->stmt() as $stmt) {
+                $this->compileStmt($stmt);
+            }
+            $this->emitter->emit('b ' . $endLabel);
+            $this->emitter->emitLabel($nextLabel);
+        }
+
+        if ($defaultClause !== null) {
+            foreach ($defaultClause->stmt() as $stmt) {
+                $this->compileStmt($stmt);
+            }
+        }
+
+        $this->emitter->emitLabel($endLabel);
+    }
+
+    private function compileForStmt(object $forStmt): void
+    {
+        if ($forStmt instanceof \Context\ForInfiniteContext) {
+            $start = $this->labels->next('L_FOR_INF');
+            $end = $this->labels->next('L_FOR_END');
+            $this->loopStack[] = ['break' => $end, 'continue' => $start];
+
+            $this->emitter->emitLabel($start);
+            $this->compileBlock($forStmt->block());
+            $this->emitter->emit('b ' . $start);
+            $this->emitter->emitLabel($end);
+
+            array_pop($this->loopStack);
+            return;
+        }
+
+        if ($forStmt instanceof \Context\ForWhileContext) {
+            $start = $this->labels->next('L_FOR_WHILE');
+            $end = $this->labels->next('L_FOR_END');
+            $this->loopStack[] = ['break' => $end, 'continue' => $start];
+
+            $this->emitter->emitLabel($start);
+            $this->compileExpr($forStmt->expr());
+            $this->emitter->emit('cmp x0, #0');
+            $this->emitter->emit('b.eq ' . $end);
+            $this->compileBlock($forStmt->block());
+            $this->emitter->emit('b ' . $start);
+            $this->emitter->emitLabel($end);
+
+            array_pop($this->loopStack);
+            return;
+        }
+
+        if ($forStmt instanceof \Context\ForClassicContext) {
+            $start = $this->labels->next('L_FOR_CLASSIC');
+            $post = $this->labels->next('L_FOR_POST');
+            $end = $this->labels->next('L_FOR_END');
+
+            $this->compileForInit($forStmt->forInit());
+            $this->loopStack[] = ['break' => $end, 'continue' => $post];
+
+            $this->emitter->emitLabel($start);
+            $this->compileExpr($forStmt->expr());
+            $this->emitter->emit('cmp x0, #0');
+            $this->emitter->emit('b.eq ' . $end);
+            $this->compileBlock($forStmt->block());
+            $this->emitter->emitLabel($post);
+            $this->compileForPost($forStmt->forPost());
+            $this->emitter->emit('b ' . $start);
+            $this->emitter->emitLabel($end);
+
+            array_pop($this->loopStack);
+            return;
+        }
+
+        throw new \RuntimeException('Tipo de for no soportado en Sprint 3.');
+    }
+
+    private function compileForInit(object $forInit): void
+    {
+        if ($forInit instanceof \Context\ForInitShortContext) {
+            $this->compileShortDecl($forInit->shortDecl());
+            return;
+        }
+        if ($forInit instanceof \Context\ForInitAssignContext) {
+            $this->compileAssign($forInit->assignment());
+            return;
+        }
+        throw new \RuntimeException('Inicializacion de for no soportada.');
+    }
+
+    private function compileForPost(object $forPost): void
+    {
+        if ($forPost instanceof \Context\ForPostAssignContext) {
+            $this->compileAssign($forPost->assignment());
+            return;
+        }
+        if ($forPost instanceof \Context\ForPostCompoundContext) {
+            $this->compileCompoundAssign($forPost->compoundAssign());
+            return;
+        }
+        if ($forPost instanceof \Context\ForPostIncContext) {
+            $name = $forPost->ID()->getText();
+            $this->loadVarToX0($name);
+            $this->emitter->emit('add x0, x0, #1');
+            $this->storeScalarFromX0($name);
+            return;
+        }
+        if ($forPost instanceof \Context\ForPostDecContext) {
+            $name = $forPost->ID()->getText();
+            $this->loadVarToX0($name);
+            $this->emitter->emit('sub x0, x0, #1');
+            $this->storeScalarFromX0($name);
+            return;
+        }
+        throw new \RuntimeException('Post de for no soportado.');
     }
 
     private function compileVarDecl(object $varDecl): void
@@ -193,8 +442,12 @@ class CodeGen
             }
 
             if (isset($exprs[$i])) {
-                $exprType = $this->compileExpr($exprs[$i]);
-                $this->storeExprToVar($name, $exprType);
+                if ($this->isArrayType($type)) {
+                    $this->compileArrayLiteralInit($name, $exprs[$i]);
+                } else {
+                    $exprType = $this->compileExpr($exprs[$i]);
+                    $this->storeExprToVar($name, $exprType);
+                }
             } else {
                 $this->storeDefaultForType($name, $type);
             }
@@ -213,11 +466,25 @@ class CodeGen
                 continue;
             }
 
+            $inferred = $this->inferExprTypeForDecl($expr);
+            if ($inferred !== null) {
+                if (!isset($this->variables[$name])) {
+                    $this->declareVar($name, $inferred);
+                }
+                $this->compileArrayLiteralInit($name, $expr);
+                continue;
+            }
+
             $exprType = $this->compileExpr($expr);
             if (!isset($this->variables[$name])) {
                 $this->declareVar($name, $exprType);
             }
-            $this->storeExprToVar($name, $exprType);
+
+            if ($this->isArrayType($this->variables[$name]['type'])) {
+                $this->compileArrayLiteralInit($name, $expr);
+            } else {
+                $this->storeExprToVar($name, $exprType);
+            }
         }
     }
 
@@ -230,6 +497,53 @@ class CodeGen
 
         $exprType = $this->compileExpr($assign->expr());
         $this->storeExprToVar($name, $exprType);
+    }
+
+    private function compileArrayAssign(object $arrayAssign): void
+    {
+        if ($arrayAssign instanceof \Context\ArrayAssign1DContext) {
+            $name = $arrayAssign->ID()->getText();
+            $meta = $this->variables[$name] ?? null;
+            if ($meta === null || !isset($meta['dims'][0])) {
+                throw new \RuntimeException("Arreglo '$name' no declarado.");
+            }
+
+            $this->compileExpr($arrayAssign->expr(0));
+            $this->emitter->emit('mov x9, x0');
+            $valueType = $this->compileExpr($arrayAssign->expr(1));
+
+            if ($valueType === 'string') {
+                throw new \RuntimeException('Asignacion string en arreglo fuera del alcance Sprint 3.');
+            }
+
+            $this->emitArrayAddress1D($name, 'x9', 'x11');
+            $this->emitter->emit('str x0, [x11]');
+            return;
+        }
+
+        if ($arrayAssign instanceof \Context\ArrayAssign2DContext) {
+            $name = $arrayAssign->ID()->getText();
+            $meta = $this->variables[$name] ?? null;
+            if ($meta === null || !isset($meta['dims'][1])) {
+                throw new \RuntimeException("Matriz '$name' no declarada.");
+            }
+
+            $this->compileExpr($arrayAssign->expr(0));
+            $this->emitter->emit('mov x9, x0');
+            $this->compileExpr($arrayAssign->expr(1));
+            $this->emitter->emit('mov x10, x0');
+            $valueType = $this->compileExpr($arrayAssign->expr(2));
+
+            if ($valueType === 'string') {
+                throw new \RuntimeException('Asignacion string en matriz fuera del alcance Sprint 3.');
+            }
+
+            $this->emitArrayAddress2D($name, 'x9', 'x10', 'x11');
+            $this->emitter->emit('str x0, [x11]');
+            return;
+        }
+
+        throw new \RuntimeException('Asignacion de arreglo no soportada.');
     }
 
     private function compileCompoundAssign(object $assign): void
@@ -321,6 +635,32 @@ class CodeGen
             }
             $this->loadVarToX0($name);
             return $type;
+        }
+
+        if ($expr instanceof \Context\ArrayAccess1DContext) {
+            $name = $expr->ID()->getText();
+            if (!isset($this->variables[$name])) {
+                throw new \RuntimeException("Arreglo '$name' no declarado.");
+            }
+            $this->compileExpr($expr->expr());
+            $this->emitter->emit('mov x9, x0');
+            $this->emitArrayAddress1D($name, 'x9', 'x11');
+            $this->emitter->emit('ldr x0, [x11]');
+            return $this->variables[$name]['elemType'] ?? 'int32';
+        }
+
+        if ($expr instanceof \Context\ArrayAccess2DContext) {
+            $name = $expr->ID()->getText();
+            if (!isset($this->variables[$name])) {
+                throw new \RuntimeException("Matriz '$name' no declarada.");
+            }
+            $this->compileExpr($expr->expr(0));
+            $this->emitter->emit('mov x9, x0');
+            $this->compileExpr($expr->expr(1));
+            $this->emitter->emit('mov x10, x0');
+            $this->emitArrayAddress2D($name, 'x9', 'x10', 'x11');
+            $this->emitter->emit('ldr x0, [x11]');
+            return $this->variables[$name]['elemType'] ?? 'int32';
         }
 
         if ($expr instanceof \Context\GroupExprContext) {
@@ -479,7 +819,8 @@ class CodeGen
 
     private function declareVar(string $name, string $type): void
     {
-        $size = $type === 'string' ? 16 : 8;
+        $info = $this->parseTypeInfo($type);
+        $size = $info['size'];
         $aligned = ($size + 7) & ~7;
         $offset = $this->nextOffset;
         $this->nextOffset += $aligned;
@@ -491,11 +832,25 @@ class CodeGen
         $this->variables[$name] = [
             'type' => $type,
             'offset' => $offset,
+            'size' => $aligned,
+            'kind' => $info['kind'],
+            'elemType' => $info['elemType'],
+            'elemSize' => $info['elemSize'],
+            'dims' => $info['dims'],
         ];
     }
 
     private function storeDefaultForType(string $name, string $type): void
     {
+        if ($this->isArrayType($type)) {
+            $off = $this->variables[$name]['offset'];
+            $words = intdiv($this->variables[$name]['size'], 8);
+            for ($i = 0; $i < $words; $i++) {
+                $this->emitter->emit('str xzr, [sp, #' . ($off + ($i * 8)) . ']');
+            }
+            return;
+        }
+
         if ($type === 'string') {
             $this->emitLoadStringLabelToX0X1('__empty_str');
             $this->storeStringFromX0X1($name);
@@ -509,11 +864,181 @@ class CodeGen
     private function storeExprToVar(string $name, string $exprType): void
     {
         $varType = $this->variables[$name]['type'];
+        if ($this->isArrayType($varType)) {
+            throw new \RuntimeException('Asignacion directa de arreglos fuera del alcance Sprint 3.');
+        }
         if ($varType === 'string' || $exprType === 'string') {
             $this->storeStringFromX0X1($name);
             return;
         }
         $this->storeScalarFromX0($name);
+    }
+
+    private function compileArrayLiteralInit(string $name, object $exprNode): void
+    {
+        if (!isset($this->variables[$name])) {
+            throw new \RuntimeException("Arreglo '$name' no declarado.");
+        }
+
+        $meta = $this->variables[$name];
+        $off = $meta['offset'];
+        $values = [];
+
+        if ($exprNode instanceof \Context\PrimaryExprContext) {
+            $primary = $exprNode->primary();
+            if ($primary instanceof \Context\ArrayLit1DContext || $primary instanceof \Context\ArrayLit2DContext) {
+                foreach ($primary->expr() as $e) {
+                    $values[] = $this->evalConstIntExpr($e);
+                }
+            } else {
+                throw new \RuntimeException('Inicializacion de arreglo requiere literal de arreglo.');
+            }
+        } else {
+            throw new \RuntimeException('Inicializacion de arreglo requiere literal de arreglo.');
+        }
+
+        $totalSlots = intdiv($meta['size'], 8);
+        for ($i = 0; $i < $totalSlots; $i++) {
+            $val = $values[$i] ?? 0;
+            $this->emitter->emit('mov x0, #' . $val);
+            $this->emitter->emit('str x0, [sp, #' . ($off + ($i * 8)) . ']');
+        }
+    }
+
+    private function emitArrayAddress1D(string $name, string $indexReg, string $outReg): void
+    {
+        $meta = $this->variables[$name];
+        $off = $meta['offset'];
+        $elemSize = $meta['elemSize'] ?? 8;
+
+        $this->emitter->emit('add ' . $outReg . ', sp, #' . $off);
+        if ($elemSize === 8) {
+            $this->emitter->emit('lsl ' . $indexReg . ', ' . $indexReg . ', #3');
+            $this->emitter->emit('add ' . $outReg . ', ' . $outReg . ', ' . $indexReg);
+            return;
+        }
+
+        $this->emitter->emit('mov x12, #' . $elemSize);
+        $this->emitter->emit('mul ' . $indexReg . ', ' . $indexReg . ', x12');
+        $this->emitter->emit('add ' . $outReg . ', ' . $outReg . ', ' . $indexReg);
+    }
+
+    private function emitArrayAddress2D(string $name, string $rowReg, string $colReg, string $outReg): void
+    {
+        $meta = $this->variables[$name];
+        $off = $meta['offset'];
+        $elemSize = $meta['elemSize'] ?? 8;
+        $cols = $meta['dims'][1] ?? 1;
+
+        $this->emitter->emit('mov x12, #' . $cols);
+        $this->emitter->emit('mul ' . $rowReg . ', ' . $rowReg . ', x12');
+        $this->emitter->emit('add ' . $rowReg . ', ' . $rowReg . ', ' . $colReg);
+
+        $this->emitter->emit('add ' . $outReg . ', sp, #' . $off);
+        if ($elemSize === 8) {
+            $this->emitter->emit('lsl ' . $rowReg . ', ' . $rowReg . ', #3');
+            $this->emitter->emit('add ' . $outReg . ', ' . $outReg . ', ' . $rowReg);
+            return;
+        }
+
+        $this->emitter->emit('mov x12, #' . $elemSize);
+        $this->emitter->emit('mul ' . $rowReg . ', ' . $rowReg . ', x12');
+        $this->emitter->emit('add ' . $outReg . ', ' . $outReg . ', ' . $rowReg);
+    }
+
+    private function isArrayType(string $type): bool
+    {
+        return str_starts_with(trim($type), '[');
+    }
+
+    private function parseTypeInfo(string $type): array
+    {
+        $type = trim($type);
+
+        if (!$this->isArrayType($type)) {
+            if ($type === 'string') {
+                return [
+                    'kind' => 'string',
+                    'elemType' => 'string',
+                    'elemSize' => 16,
+                    'dims' => [],
+                    'size' => 16,
+                ];
+            }
+
+            return [
+                'kind' => 'scalar',
+                'elemType' => $type,
+                'elemSize' => 8,
+                'dims' => [],
+                'size' => 8,
+            ];
+        }
+
+        $dims = [];
+        while (preg_match('/^\[(\d+)\](.+)$/', $type, $m)) {
+            $dims[] = (int) $m[1];
+            $type = trim($m[2]);
+        }
+
+        $elemType = $type;
+        $elemSize = $elemType === 'string' ? 16 : 8;
+        $count = 1;
+        foreach ($dims as $d) {
+            $count *= $d;
+        }
+
+        return [
+            'kind' => 'array',
+            'elemType' => $elemType,
+            'elemSize' => $elemSize,
+            'dims' => $dims,
+            'size' => $count * $elemSize,
+        ];
+    }
+
+    private function inferExprTypeForDecl(object $expr): ?string
+    {
+        if ($expr instanceof \Context\PrimaryExprContext) {
+            $p = $expr->primary();
+            if ($p instanceof \Context\ArrayLit1DContext) {
+                return '[' . $p->INT_LIT()->getText() . ']' . $p->typeRef()->getText();
+            }
+            if ($p instanceof \Context\ArrayLit2DContext) {
+                $d0 = $p->INT_LIT(0)->getText();
+                $d1 = $p->INT_LIT(1)->getText();
+                return '[' . $d0 . '][' . $d1 . ']' . $p->typeRef()->getText();
+            }
+        }
+        return null;
+    }
+
+    private function evalConstIntExpr(object $expr): int
+    {
+        if ($expr instanceof \Context\PrimaryExprContext) {
+            $p = $expr->primary();
+            if ($p instanceof \Context\IntLitContext) {
+                return (int) $p->INT_LIT()->getText();
+            }
+            if ($p instanceof \Context\TrueLitContext) {
+                return 1;
+            }
+            if ($p instanceof \Context\FalseLitContext) {
+                return 0;
+            }
+            if ($p instanceof \Context\RuneLitContext) {
+                $raw = $p->RUNE_LIT()->getText();
+                $inner = substr($raw, 1, -1);
+                $ch = stripcslashes($inner);
+                return isset($ch[0]) ? ord($ch[0]) : 0;
+            }
+        }
+
+        if ($expr instanceof \Context\NegExprContext) {
+            return -$this->evalConstIntExpr($expr->expr());
+        }
+
+        throw new \RuntimeException('Literal de arreglo no constante o no soportado.');
     }
 
     private function storeScalarFromX0(string $name): void
