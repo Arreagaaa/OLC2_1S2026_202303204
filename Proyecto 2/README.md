@@ -144,7 +144,13 @@ Proyecto 2/
 - Consola de salida
 - Tabla de simbolos (ver en panel / descargar como `.html`)
 - Tabla de errores (ver en panel / descargar como `.html`)
+- Consola con el ARM64 generado en lugar del output interpretado
+- Descarga del ARM64 generado como archivo `.s`
 - Descargar resultado de consola como `.txt`
+
+### Entrega final
+- Documentacion tecnica en `docs/gramatica.md`, `docs/diagrama-clases.md` y `docs/manual-usuario.md`
+- Reportes HTML de simbolos y errores desde la propia GUI
 
 ---
 
