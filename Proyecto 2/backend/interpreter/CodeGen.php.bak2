@@ -37,9 +37,6 @@ class CodeGen
     private array $stringPool = [];
     /** @var array<string, string> */
     private array $literalByValue = [];
-    
-    /** @var int counter for temporary registers in expressions */
-    private int $tempRegIndex = 11;
 
     public function __construct(string $source = '', string $console = '')
     {
@@ -229,7 +226,6 @@ class CodeGen
 
         $this->emitter->emitLabel($isMain ? '_start' : $name);
         $this->emitter->emit('stp x29, x30, [sp, #-16]!');
-        $this->emitter->emit('stp x19, x20, [sp, #-16]!');
         $this->emitter->emit('mov x29, sp');
         $this->emitter->emit('sub sp, sp, #' . self::LOCAL_STACK_SIZE);
 
@@ -241,7 +237,6 @@ class CodeGen
 
         $this->emitter->emitLabel($this->functionEndLabel);
         $this->emitter->emit('add sp, sp, #' . self::LOCAL_STACK_SIZE);
-        $this->emitter->emit('ldp x19, x20, [sp], #16');
         $this->emitter->emit('ldp x29, x30, [sp], #16');
         if ($isMain) {
             $this->emitExitSyscall();
@@ -293,63 +288,45 @@ class CodeGen
         }
 
         $args = $call->argList() !== null ? $call->argList()->expr() : [];
-        
-        // PASO 1: Compilar todos los argumentos por valor PRIMERO en registros temporales
-        $tempReg = 20;
-        $byValArgs = array();
         foreach ($args as $index => $argExpr) {
             $param = $signature['params'][$index] ?? null;
-            if ($param === null || $param['byRef']) {
-                continue;
-            }
-            
-            $this->compileExpr($argExpr);
-            if ($index < 8 && $tempReg < 28) {
-                $this->emitter->emit('mov x' . $tempReg . ', x0');
-                $byValArgs[$index] = 'x' . $tempReg;
-                $tempReg++;
-            }
-        }
-        
-        // PASO 2: Procesar argumentos por referencia
-        foreach ($args as $index => $argExpr) {
-            $param = $signature['params'][$index] ?? null;
-            if ($param === null || !$param['byRef']) {
+            if ($param === null) {
                 continue;
             }
 
-            $this->compileArgumentAddress($argExpr);
-            if ($index < 8) {
-                $this->emitter->emit('mov x' . $index . ', x0');
+            if ($param['byRef']) {
+                $this->compileArgumentAddress($argExpr);
+                if ($index < 8) {
+                    $this->emitter->emit('mov x' . $index . ', x0');
 
-                // Para arrays por referencia, también pasar el tamaño en xN+1
-                if ($this->isArrayType($param['type'] ?? '')) {
-                    $argName = null;
-                    if ($argExpr instanceof \Context\IdExprContext) {
-                        $argName = $argExpr->ID()->getText();
-                    } elseif ($argExpr instanceof \Context\RefExprContext) {
-                        $argName = $argExpr->ID()->getText();
-                    }
-                    
-                    if ($argName !== null) {
-                        $argMeta = $this->variables[$argName] ?? null;
-                        if ($argMeta && !empty($argMeta['dims'])) {
-                            $count = 1;
-                            foreach ($argMeta['dims'] as $dim) {
-                                $count *= $dim;
-                            }
-                            if ($index + 1 < 8) {
-                                $this->emitter->emit('mov x' . ($index + 1) . ', #' . $count);
+                    // Para arrays por referencia, también pasar el tamaño en xN+1
+                    if ($this->isArrayType($param['type'] ?? '')) {
+                        if ($argExpr instanceof \Context\IdExprContext) {
+                            $argName = $argExpr->ID()->getText();
+                            $argMeta = $this->variables[$argName] ?? null;
+                            if ($argMeta && !empty($argMeta['dims'])) {
+                                $count = 1;
+                                foreach ($argMeta['dims'] as $dim) {
+                                    $count *= $dim;
+                                }
+                                if ($index + 1 < 8) {
+                                    $this->emitter->emit('mov x' . ($index + 1) . ', #' . $count);
+                                }
                             }
                         }
                     }
                 }
+                continue;
             }
-        }
-        
-        // PASO 3: Mover argumentos por valor desde registros temporales a sus registros finales
-        foreach ($byValArgs as $index => $tempRegName) {
-            $this->emitter->emit('mov x' . $index . ', ' . $tempRegName);
+
+            $argType = $this->compileExpr($argExpr);
+            if ($index < 8) {
+                if ($argType === 'string') {
+                    $this->emitter->emit('mov x' . $index . ', x0');
+                } else {
+                    $this->emitter->emit('mov x' . $index . ', x0');
+                }
+            }
         }
 
         $this->emitter->emit('bl ' . $name);
@@ -936,14 +913,14 @@ class CodeGen
             }
 
             $this->compileExpr($arrayAssign->expr(0));
-            $this->emitter->emit('mov x14, x0');  // Guardar el índice para uso seguro
+            $this->emitter->emit('mov x8, x0');  // Usar x8 para el índice (no x9)
             $valueType = $this->compileExpr($arrayAssign->expr(1));
 
             if ($valueType === 'string') {
                 throw new \RuntimeException('Asignacion string en arreglo fuera del alcance Sprint 3.');
             }
 
-            $this->emitArrayAddress1D($name, 'x14', 'x11');  // Usar x14
+            $this->emitArrayAddress1D($name, 'x8', 'x11');  // Usar x8
             $this->emitter->emit('str x0, [x11]');
             return;
         }
@@ -956,16 +933,16 @@ class CodeGen
             }
 
             $this->compileExpr($arrayAssign->expr(0));
-            $this->emitter->emit('mov x14, x0');  // Usar x14 para primer índice
+            $this->emitter->emit('mov x8, x0');  // Usar x8 para primer índice
             $this->compileExpr($arrayAssign->expr(1));
-            $this->emitter->emit('mov x15, x0');  // Usar x15 para segundo índice
+            $this->emitter->emit('mov x9, x0');  // Usar x9 para segundo índice
             $valueType = $this->compileExpr($arrayAssign->expr(2));
 
             if ($valueType === 'string') {
                 throw new \RuntimeException('Asignacion string en matriz fuera del alcance Sprint 3.');
             }
 
-            $this->emitArrayAddress2D($name, 'x14', 'x15', 'x11');  // Usar x14, x15
+            $this->emitArrayAddress2D($name, 'x8', 'x9', 'x11');  // Usar x8, x9
             $this->emitter->emit('str x0, [x11]');
             return;
         }
@@ -1125,29 +1102,27 @@ class CodeGen
 
         if ($expr instanceof \Context\MulExprContext) {
             $this->compileExpr($expr->expr(0));
-            // Guardar en x19 (callee-saved, no se corrompe en calls)
-            $this->emitter->emit('mov x19, x0');
+            $this->emitter->emit('mov x9, x0');
             $this->compileExpr($expr->expr(1));
-            $this->emitter->emit('mov x20, x0');
+            $this->emitter->emit('mov x10, x0');
 
             $op = $expr->op->getText();
             if ($op === '*') {
-                $this->emitter->emit('mul x0, x19, x20');
+                $this->emitter->emit('mul x0, x9, x10');
             } elseif ($op === '/') {
-                $this->emitter->emit('sdiv x0, x19, x20');
+                $this->emitter->emit('sdiv x0, x9, x10');
             } else {
-                $this->emitter->emit('sdiv x11, x19, x20');
-                $this->emitter->emit('msub x0, x11, x20, x19');
+                $this->emitter->emit('sdiv x11, x9, x10');
+                $this->emitter->emit('msub x0, x11, x10, x9');
             }
             return 'int32';
         }
 
         if ($expr instanceof \Context\AddExprContext) {
             $leftType = $this->compileExpr($expr->expr(0));
-            // Guardar en x19 (callee-saved)
-            $this->emitter->emit('mov x19, x0');
+            $this->emitter->emit('mov x9, x0');
             $rightType = $this->compileExpr($expr->expr(1));
-            $this->emitter->emit('mov x20, x0');
+            $this->emitter->emit('mov x10, x0');
 
             $op = $expr->op->getText();
             if ($op === '+' && $leftType === 'string' && $rightType === 'string') {
@@ -1155,19 +1130,18 @@ class CodeGen
             }
 
             if ($op === '+') {
-                $this->emitter->emit('add x0, x19, x20');
+                $this->emitter->emit('add x0, x9, x10');
             } else {
-                $this->emitter->emit('sub x0, x19, x20');
+                $this->emitter->emit('sub x0, x9, x10');
             }
             return 'int32';
         }
 
         if ($expr instanceof \Context\RelExprContext) {
             $this->compileExpr($expr->expr(0));
-            // Guardar en x19 (callee-saved)
-            $this->emitter->emit('mov x19, x0');
+            $this->emitter->emit('mov x9, x0');
             $this->compileExpr($expr->expr(1));
-            $this->emitter->emit('cmp x19, x0');
+            $this->emitter->emit('cmp x9, x0');
 
             $op = $expr->op->getText();
             $cond = match ($op) {
