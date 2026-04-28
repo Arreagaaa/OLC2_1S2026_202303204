@@ -2,85 +2,9 @@
 
 Diagrama resumido de la arquitectura principal del proyecto.
 
-```mermaid
-classDiagram
-    class Visitor {
-        +visitProgramRule()
-        +visitFunctionDeclaration()
-        +visitIfStmtRule()
-        +visitForClassic()
-        +visitBuiltinLen()
-    }
+Fuente Graphviz del mismo diagrama: `docs/photos/diagrama_clases.png`.
 
-    class Interpreter {
-        +console
-        +env
-        +errors
-        +visitProgramRule()
-        +visitFunctionDeclaration()
-        +visitBlockStmt()
-        +getSymbolTable()
-    }
-
-    class CodeGen {
-        +generateProgram()
-        +compileFunctionDeclaration()
-        +compileUserFuncCall()
-        +compileExpr()
-        +emitArrayAddress1D()
-    }
-
-    class Environment {
-        +declare()
-        +assign()
-        +get()
-        +getLocal()
-    }
-
-    class FuncionUsuario {
-        +invoke()
-    }
-
-    class Symbol {
-        +id
-        +tipo
-        +valor
-        +clase
-        +ambito
-        +offset
-    }
-
-    class ErrorEntry {
-        +tipo
-        +descripcion
-        +fila
-        +columna
-    }
-
-    class SymbolTableReport {
-        +toHtml()
-    }
-
-    class ErrorReport {
-        +toHtml()
-    }
-
-    class execute.php {
-        +POST codigo
-        +returns JSON
-    }
-
-    Visitor --|> Interpreter
-    Interpreter --> Environment
-    Interpreter --> FuncionUsuario
-    Interpreter --> Symbol
-    Interpreter --> ErrorEntry
-    CodeGen --> Symbol
-    execute.php --> Visitor
-    execute.php --> CodeGen
-    execute.php --> SymbolTableReport
-    execute.php --> ErrorReport
-```
+![Diagrama de clases](photos/diagrama_clases.png)
 
 ## Lectura rapida
 - `Visitor` mantiene la capa semantica/interprete.
