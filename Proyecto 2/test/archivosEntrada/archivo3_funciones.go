@@ -33,19 +33,23 @@ func main() {
 	fmt.Println("Ordenado:", arr[0], arr[1], arr[2], arr[3], arr[4])
 
 	// ==========================================
-	// 3.4 Funcion no recursiva con multiple retorno
+	// 3.4 Funcion recursiva con un retorno
 	// ==========================================
-	fmt.Println("\n--- 3.4 DIVISION MULTIPLE RETORNO ---")
-	cociente, residuo, valido := division(17, 5)
-	if valido {
-		fmt.Println("Cociente:", cociente, "Residuo:", residuo)
-	}
+	fmt.Println("\n--- 3.4 POTENCIA RECURSIVA ---")
+	fmt.Println("2^8:", potencia(2, 8))
 
 	// ==========================================
-	// 3.5 Funcion recursiva con un retorno
+	// 3.5 Funciones por referencia (nivel intermedio)
 	// ==========================================
-	fmt.Println("\n--- 3.5 POTENCIA RECURSIVA ---")
-	fmt.Println("2^8:", potencia(2, 8))
+	fmt.Println("\n--- 3.5 REFERENCIA AVANZADA: INTERCAMBIO VALIDADO E INTERCALACION ---")
+	var x int32 = 50
+	var y int32 = 30
+	intercambioValoresValidado(&x, &y)
+	fmt.Println("Intercambio validado:", x, y)
+
+	var arr2 [6]int32 = [6]int32{64, 34, 25, 12, 22, 11}
+	intercalacion(&arr2)
+	fmt.Println("Intercalación:", arr2[0], arr2[1], arr2[2], arr2[3], arr2[4], arr2[5])
 
 	// ==========================================
 	// 3.6 Funcion recursiva con multiple retorno (Euclides)
@@ -53,12 +57,6 @@ func main() {
 	fmt.Println("\n--- 3.6 EUCLIDES RECURSIVO ---")
 	mcd, pasos := euclides(48, 18)
 	fmt.Println("MCD:", mcd, "Pasos:", pasos)
-
-	// ==========================================
-	// 3.7 Hoisting
-	// ==========================================
-	fmt.Println("\n--- 3.7 HOISTING ---")
-	funcionDefinidaDespues()
 
 	// ==========================================
 	// 4.1 fmt.Println()
@@ -91,8 +89,8 @@ func main() {
 	// 4.5 typeOf()
 	// ==========================================
 	fmt.Println("\n--- 4.5 TYPEOF ---")
-	fmt.Println("int32:", typeOf(int32(42)))
-	fmt.Println("float32:", typeOf(float32(3.14)))
+	fmt.Println("int32:", typeOf(42))
+	fmt.Println("float32:", typeOf(3.14))
 	fmt.Println("bool:", typeOf(true))
 	fmt.Println("string:", typeOf("texto"))
 
@@ -110,9 +108,9 @@ func calcularVolumenPiramide(base float32, altura float32) float32 {
 }
 
 func intercambioValores(x *int32, y *int32) {
-	temp := *x
-	*x = *y
-	*y = temp
+	temp := x
+	x = y
+	y = temp
 }
 
 func ordenamientoSeleccion(arr *[5]int32) {
@@ -131,13 +129,6 @@ func ordenamientoSeleccion(arr *[5]int32) {
 	}
 }
 
-func division(a int32, b int32) (int32, int32, bool) {
-	if b == 0 {
-		return 0, 0, false
-	}
-	return a / b, a % b, true
-}
-
 func potencia(base int32, exponente int32) int32 {
 	if exponente == 0 {
 		return 1
@@ -153,8 +144,24 @@ func euclides(a int32, b int32) (int32, int32) {
 	return resultado, pasos + 1
 }
 
-func funcionDefinidaDespues() {
-	fmt.Println("Funcion ejecutada por hoisting")
+func intercambioValoresValidado(x *int32, y *int32) {
+	if x != nil && y != nil {
+		temp := x
+		x = y
+		y = temp
+	}
+}
+
+func intercalacion(arr *[6]int32) {
+	for i := 0; i < 5; i++ {
+		for j := 0; j < 5-i; j++ {
+			if arr[j] > arr[j+1] {
+				temp := arr[j]
+				arr[j] = arr[j+1]
+				arr[j+1] = temp
+			}
+		}
+	}
 }
 
 /*
@@ -172,17 +179,15 @@ Volumen: 500
 Intercambio: 200 100
 Ordenado: 11 12 22 25 64
 
---- 3.4 DIVISION MULTIPLE RETORNO ---
-Cociente: 3 Residuo: 2
-
---- 3.5 POTENCIA RECURSIVA ---
+--- 3.4 POTENCIA RECURSIVA ---
 2^8: 256
 
 --- 3.6 EUCLIDES RECURSIVO ---
 MCD: 6 Pasos: 4
 
---- 3.7 HOISTING ---
-Funcion ejecutada por hoisting
+--- 3.5 REFERENCIA AVANZADA: INTERCAMBIO VALIDADO E INTERCALACION ---
+Intercambio validado: 30 50
+Intercalación: 11 12 22 25 34 64
 
 --- 4.1 FMT.PRINTLN ---
 Impresion directa de texto
