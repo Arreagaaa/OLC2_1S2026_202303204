@@ -28,14 +28,16 @@ document.getElementById('btn-run').addEventListener('click', async () => {
         const data = await res.json();
         window._lastResponse = data;
 
-        // mostrar codigo ARM64 o errores en la consola
+        // mostrar salida ejecutada o codigo ARM64 en la consola
         if (data.errors && data.errors.length > 0) {
             const errLines = data.errors.map(
                 e => `[${e.tipo}] Linea ${e.fila}, Col ${e.columna}: ${e.descripcion}`
             );
             consola.textContent = errLines.join('\n');
         } else {
-            consola.textContent = data.arm64_code ?? '';
+            // Mostrar salida ejecutada si está disponible, sino ARM64
+            const displayOutput = data.executed_output || data.arm64_code || '';
+            consola.textContent = displayOutput;
         }
 
         // notificar a reports.js que hay datos frescos
@@ -117,4 +119,74 @@ document.getElementById('btn-validate-qemu').addEventListener('click', async () 
     } catch (err) {
         consola.textContent = 'Error de red al validar en QEMU: ' + err.message;
     }
+});
+
+const QEMU_SINGLE_URL = '../backend/api/validate_qemu_single.php';
+const officialFiles = ['archivo1_basico.go', 'archivo2_intermedio.go', 'archivo3_funciones.go', 'archivo4_arreglos1d.go', 'archivo5_arreglos_ndim.go'];
+let currentSingleIndex = 0;
+
+document.getElementById('btn-validate-single').addEventListener('click', async () => {
+    const consola = document.getElementById('console');
+    const reportView = document.getElementById('report-view');
+
+    currentSingleIndex = 0;
+    consola.textContent = 'Validando primer archivo...';
+    reportView.innerHTML = '<span class="report-placeholder">Validando archivo por archivo...</span>';
+
+    const validateNext = async () => {
+        if (currentSingleIndex >= officialFiles.length) {
+            consola.textContent += '\n\n=== VALIDACION COMPLETADA ===\nTodos los archivos fueron validados.';
+            return;
+        }
+
+        const fileName = officialFiles[currentSingleIndex];
+        currentSingleIndex++;
+
+        try {
+            const res = await fetch(QEMU_SINGLE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file: fileName }),
+            });
+
+            if (!res.ok) {
+                consola.textContent += `\n\n[ERROR] ${fileName}: HTTP ${res.status}`;
+                validateNext();
+                return;
+            }
+
+            const data = await res.json();
+
+            let output = `\n\n=== ${fileName} ===\n`;
+            output += `Status: ${data.status}\n`;
+            output += `Symbols: ${data.symbols_count}\n`;
+            output += `Fallback: ${data.fallback ? 'YES' : 'NO'}\n`;
+            output += `\nPasos:\n`;
+
+            for (const step of data.steps || []) {
+                const ok = step.ok ? '✓' : '✗';
+                output += `  ${ok} ${step.step}`;
+                if (step.symbols !== undefined) output += ` (${step.symbols} símbolos)`;
+                if (step.fallback !== undefined) output += ` (fallback=${step.fallback ? 'YES' : 'NO'})`;
+                if (step.error) output += ` - ERROR: ${step.error}`;
+                if (step.match) output += ` - ${step.match}`;
+                output += '\n';
+            }
+
+            if (data.status === 'PASS' && data.qemu_output) {
+                output += `\nSalida ejecutada:\n${data.qemu_output}\n`;
+            }
+
+            consola.textContent += output;
+            reportView.innerHTML = `<pre style="color:#c7f9cc;font-size:12px;overflow:auto;height:100%;padding:10px">${data.qemu_output || 'Sin salida'}</pre>`;
+
+            // Validar siguiente archivo después de 1.5 segundos
+            setTimeout(validateNext, 1500);
+        } catch (err) {
+            consola.textContent += `\n\n[ERROR] ${fileName}: ${err.message}`;
+            validateNext();
+        }
+    };
+
+    await validateNext();
 });

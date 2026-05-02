@@ -147,6 +147,7 @@ $symbolsJson = array_map(fn($s) => [
 echo json_encode([
     'output'      => $output,
     'arm64_code'  => $arm64Code,
+    'executed_output' => $output,
     'errors'      => $errorsJson,
     'symbols'     => $symbolsJson,
     'errorsHtml'  => ErrorReport::toHtml($errorList),
