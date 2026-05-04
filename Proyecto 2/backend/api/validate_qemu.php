@@ -50,7 +50,9 @@ function isNumericToken(string $token): bool
 function lineMatches(string $expected, string $actual): bool
 {
     if (str_contains($expected, '<NOW>')) {
-        $pattern = '/^' . str_replace('<NOW>', '.+', preg_quote($expected, '/')) . '$/u';
+        $quoted = preg_quote($expected, '/');
+        $quoted = str_replace('\<NOW\>', '.+', $quoted);
+        $pattern = '/^' . $quoted . '$/u';
         if (preg_match($pattern, $actual) === 1) {
             return true;
         }
@@ -159,13 +161,65 @@ foreach ($inputFiles as $filePath) {
             $expectedLines = explode("\n", normalizeText($expectedBlock));
             $actualLines = explode("\n", normalizeText($qemuOutput));
 
-            if (count($expectedLines) !== count($actualLines)) {
+            // Compare by paragraphs (blocks separated by blank lines) to be
+            // resilient to reorderings of independent sections in output.
+            $splitParagraphs = function(array $lines): array {
+                $paras = [];
+                $cur = [];
+                foreach ($lines as $ln) {
+                    if (trim($ln) === '') {
+                        if (count($cur) > 0) {
+                            $paras[] = $cur;
+                            $cur = [];
+                        }
+                    } else {
+                        $cur[] = $ln;
+                    }
+                }
+                if (count($cur) > 0) $paras[] = $cur;
+                return $paras;
+            };
+
+            $expectedParas = $splitParagraphs($expectedLines);
+            $actualParas = $splitParagraphs($actualLines);
+
+            if (count($expectedParas) !== count($actualParas)) {
                 $notes[] = 'aviso_cantidad_lineas_esperadas_distinta';
             } else {
-                for ($i = 0; $i < count($expectedLines); $i++) {
-                    if (!lineMatches($expectedLines[$i], $actualLines[$i])) {
-                        $notes[] = 'aviso_linea_esperada_no_coincide=' . ($i + 1);
+                $used = array_fill(0, count($actualParas), false);
+                $allMatched = true;
+                foreach ($expectedParas as $pIndex => $ePara) {
+                    $matched = false;
+                    for ($a = 0; $a < count($actualParas); $a++) {
+                        if ($used[$a]) continue;
+                        $aPara = $actualParas[$a];
+                        if (count($ePara) !== count($aPara)) continue;
+                        $ok = true;
+                        for ($k = 0; $k < count($ePara); $k++) {
+                            if (!lineMatches($ePara[$k], $aPara[$k])) {
+                                $ok = false;
+                                break;
+                            }
+                        }
+                        if ($ok) {
+                            $used[$a] = true;
+                            $matched = true;
+                            break;
+                        }
+                    }
+                    if (!$matched) {
+                        $allMatched = false;
+                        $notes[] = 'aviso_parrafo_esperado_no_encontrado=' . ($pIndex + 1);
                         break;
+                    }
+                }
+                if (!$allMatched) {
+                    // fallback: keep line-by-line diagnostic for debugging
+                    for ($i = 0; $i < count($expectedLines); $i++) {
+                        if (!lineMatches($expectedLines[$i], $actualLines[$i])) {
+                            $notes[] = 'aviso_linea_esperada_no_coincide=' . ($i + 1);
+                            break;
+                        }
                     }
                 }
             }

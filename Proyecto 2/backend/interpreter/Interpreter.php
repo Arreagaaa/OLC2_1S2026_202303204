@@ -1132,12 +1132,20 @@ class Interpreter extends \GolampiBaseVisitor
         $right = $this->visit($ctx->expr(1));
         $op    = $ctx->op->getText();
 
-        // nil comparisons return nil
+        // nil comparisons need asymmetric handling: `x != nil` must work as a
+        // boolean guard, but `nil == nil` is still reported as nil.
         if (is_null($left) || is_null($right)) {
-            if ($op === '==' || $op === '!=') {
+            $bothNull = is_null($left) && is_null($right);
+            if ($bothNull) {
                 return null;
             }
-            return null;
+            if ($op === '==') {
+                return false;
+            }
+            if ($op === '!=') {
+                return true;
+            }
+            return false;
         }
 
         return match ($op) {
@@ -1413,8 +1421,8 @@ class Interpreter extends \GolampiBaseVisitor
         // literal primario
         if ($exprNode instanceof PrimaryExprContext) {
             $p = $exprNode->primary();
-            if ($p instanceof IntLitContext)   return 'int';
-            if ($p instanceof FloatLitContext) return 'float64';
+            if ($p instanceof IntLitContext)   return 'int32';
+            if ($p instanceof FloatLitContext) return 'float32';
             if ($p instanceof RuneLitContext)  return 'int32';
             if ($p instanceof TrueLitContext || $p instanceof FalseLitContext) return 'bool';
             if ($p instanceof StringLitContext) return 'string';
@@ -1459,8 +1467,8 @@ class Interpreter extends \GolampiBaseVisitor
     public function inferType(mixed $value): string
     {
         if (is_bool($value))   return 'bool';   // antes de is_int porque bool es subtype de int en PHP
-        if (is_int($value))    return 'int';
-        if (is_float($value))  return 'float64';
+        if (is_int($value))    return 'int32';
+        if (is_float($value))  return 'float32';
         if (is_string($value)) return 'string';
         if (is_array($value)) {
             $count = count($value);
@@ -1479,12 +1487,12 @@ class Interpreter extends \GolampiBaseVisitor
         foreach ($arr as $v) {
             if (!is_array($v)) {
                 if (is_bool($v))   return 'bool';
-                if (is_int($v))    return 'int';
-                if (is_float($v))  return 'float64';
+                if (is_int($v))    return 'int32';
+                if (is_float($v))  return 'float32';
                 if (is_string($v)) return 'string';
             }
         }
-        return 'int';
+        return 'int32';
     }
 
     // convierte un valor PHP a string para impresion
