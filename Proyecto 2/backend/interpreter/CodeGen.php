@@ -292,45 +292,48 @@ class CodeGen
             throw new \RuntimeException("Funcion '$name' no registrada para codegen.");
         }
 
+        // Preservar temporales de argumento para soportar llamadas anidadas.
+        $this->emitter->emit('stp x20, x21, [sp, #-16]!');
+        $this->emitter->emit('stp x22, x23, [sp, #-16]!');
+        $this->emitter->emit('stp x24, x25, [sp, #-16]!');
+        $this->emitter->emit('stp x26, x27, [sp, #-16]!');
+
         $args = $call->argList() !== null ? $call->argList()->expr() : [];
-        
-        // PASO 1: Compilar todos los argumentos por valor PRIMERO en registros temporales
+
+        // Mod 24: evaluar argumentos de derecha a izquierda,
+        // luego mover resultados al registro ABI correspondiente por indice.
         $tempReg = 20;
-        $byValArgs = array();
-        foreach ($args as $index => $argExpr) {
+        $evaluatedArgRegs = [];
+        $byRefArrayCounts = [];
+
+        for ($index = count($args) - 1; $index >= 0; $index--) {
+            $argExpr = $args[$index];
             $param = $signature['params'][$index] ?? null;
-            if ($param === null || $param['byRef']) {
-                continue;
-            }
-            
-            $this->compileExpr($argExpr);
-            if ($index < 8 && $tempReg < 28) {
-                $this->emitter->emit('mov x' . $tempReg . ', x0');
-                $byValArgs[$index] = 'x' . $tempReg;
-                $tempReg++;
-            }
-        }
-        
-        // PASO 2: Procesar argumentos por referencia
-        foreach ($args as $index => $argExpr) {
-            $param = $signature['params'][$index] ?? null;
-            if ($param === null || !$param['byRef']) {
-                continue;
+            $isByRef = $param !== null && !empty($param['byRef']);
+
+            if ($isByRef) {
+                $this->compileArgumentAddress($argExpr);
+            } else {
+                $this->compileExpr($argExpr);
             }
 
-            $this->compileArgumentAddress($argExpr);
             if ($index < 8) {
-                $this->emitter->emit('mov x' . $index . ', x0');
+                if ($tempReg >= 28) {
+                    throw new \RuntimeException('Demasiados argumentos para registros temporales en llamada de funcion.');
+                }
+                $this->emitter->emit('mov x' . $tempReg . ', x0');
+                $evaluatedArgRegs[$index] = 'x' . $tempReg;
+                $tempReg++;
 
-                // Para arrays por referencia, también pasar el tamaño en xN+1
-                if ($this->isArrayType($param['type'] ?? '')) {
+                // Para arrays por referencia, también pasar el tamaño en xN+1.
+                if ($isByRef && $this->isArrayType($param['type'] ?? '')) {
                     $argName = null;
                     if ($argExpr instanceof \Context\IdExprContext) {
                         $argName = $argExpr->ID()->getText();
                     } elseif ($argExpr instanceof \Context\RefExprContext) {
                         $argName = $argExpr->ID()->getText();
                     }
-                    
+
                     if ($argName !== null) {
                         $argMeta = $this->variables[$argName] ?? null;
                         if ($argMeta && !empty($argMeta['dims'])) {
@@ -338,21 +341,31 @@ class CodeGen
                             foreach ($argMeta['dims'] as $dim) {
                                 $count *= $dim;
                             }
-                            if ($index + 1 < 8) {
-                                $this->emitter->emit('mov x' . ($index + 1) . ', #' . $count);
-                            }
+                            $byRefArrayCounts[$index] = $count;
                         }
                     }
                 }
             }
         }
-        
-        // PASO 3: Mover argumentos por valor desde registros temporales a sus registros finales
-        foreach ($byValArgs as $index => $tempRegName) {
+
+        ksort($evaluatedArgRegs);
+        foreach ($evaluatedArgRegs as $index => $tempRegName) {
             $this->emitter->emit('mov x' . $index . ', ' . $tempRegName);
         }
 
+        ksort($byRefArrayCounts);
+        foreach ($byRefArrayCounts as $index => $count) {
+            if ($index + 1 < 8) {
+                $this->emitter->emit('mov x' . ($index + 1) . ', #' . $count);
+            }
+        }
+
         $this->emitter->emit('bl ' . $name);
+
+        $this->emitter->emit('ldp x26, x27, [sp], #16');
+        $this->emitter->emit('ldp x24, x25, [sp], #16');
+        $this->emitter->emit('ldp x22, x23, [sp], #16');
+        $this->emitter->emit('ldp x20, x21, [sp], #16');
 
         if (count($signature['returnTypes']) === 0) {
             return 'void';
