@@ -80,6 +80,9 @@ try {
     $tree = $parser->program();
     $result['steps'][] = ['step' => 'Parse', 'ok' => true];
 
+    $fixedNow = date('Y-m-d H:i:s');
+    putenv('GOLAMPI_NOW_FIXED=' . $fixedNow);
+
     // Paso 2: Interpret
     $visitor = new Visitor();
     $interpreterOutput = (string) $visitor->visit($tree);

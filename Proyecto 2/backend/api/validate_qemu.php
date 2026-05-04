@@ -124,6 +124,9 @@ foreach ($inputFiles as $filePath) {
         $parser = new GolampiParser($tokens);
         $tree = $parser->program();
 
+        $fixedNow = date('Y-m-d H:i:s');
+        putenv('GOLAMPI_NOW_FIXED=' . $fixedNow);
+
         $visitor = new Visitor();
         $interpreterOutput = (string) $visitor->visit($tree);
 

@@ -25,12 +25,22 @@ $tokens = new Antlr\Antlr4\Runtime\CommonTokenStream($lexer);
 $parser = new GolampiParser($tokens);
 $tree = $parser->program();
 
+$fixedNow = date('Y-m-d H:i:s');
+putenv('GOLAMPI_NOW_FIXED=' . $fixedNow);
+
 $visitor = new App\Interpreter\Visitor();
 $interp = (string) $visitor->visit($tree);
 
-$cg = new App\Interpreter\CodeGen($src, $interp);
-$asmCode = $cg->generateProgram();
-file_put_contents("output/e2e_test.s", $asmCode);
+try {
+    $cg = new App\Interpreter\CodeGen($src, $interp);
+    $asmCode = $cg->generateProgram();
+    file_put_contents("output/e2e_test.s", $asmCode);
+} catch (\Throwable $e) {
+    echo "STATUS=FAIL" . PHP_EOL;
+    echo "CODEGEN_OK=NO" . PHP_EOL;
+    echo "CODEGEN_ERROR=" . $e->getMessage() . PHP_EOL;
+    exit(4);
+}
 
 $asm = new App\Arm64\Assembler();
 $assemble = $asm->assemble("output/e2e_test.s", "output/e2e_test.o");
@@ -57,9 +67,22 @@ $normalize = function (string $s): string {
 };
 
 $same = ($normalize($interp) === $normalize($qemuOut));
+$fallback = str_contains($asmCode, "fallback ARM64");
+$allowFallback = getenv('GOLAMPI_ALLOW_FALLBACK') === '1';
+
+if ($fallback && !$allowFallback) {
+    echo "STATUS=FAIL" . PHP_EOL;
+    echo "FALLBACK=YES" . PHP_EOL;
+    echo "FALLBACK_ALLOWED=NO" . PHP_EOL;
+    echo "ASSEMBLE_OK=YES" . PHP_EOL;
+    echo "LINK_OK=YES" . PHP_EOL;
+    echo "RUN_OK=YES" . PHP_EOL;
+    echo "NORMALIZED_OUTPUT_MATCH=" . ($same ? "YES" : "NO") . PHP_EOL;
+    exit(3);
+}
 
 echo "STATUS=" . ($same ? "PASS" : "FAIL") . PHP_EOL;
-echo "FALLBACK=" . (str_contains($asmCode, "fallback ARM64") ? "YES" : "NO") . PHP_EOL;
+echo "FALLBACK=" . ($fallback ? "YES" : "NO") . PHP_EOL;
 echo "ASSEMBLE_OK=YES" . PHP_EOL;
 echo "LINK_OK=YES" . PHP_EOL;
 echo "RUN_OK=YES" . PHP_EOL;

@@ -104,6 +104,9 @@ try {
     $tree = $parser->program();
 
     if (!$errorHandler->hasErrors()) {
+        $fixedNow = date('Y-m-d H:i:s');
+        putenv('GOLAMPI_NOW_FIXED=' . $fixedNow);
+
         $visitor = new Visitor();
         $output = $visitor->visit($tree);
 

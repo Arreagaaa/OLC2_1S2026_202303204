@@ -168,6 +168,8 @@ arrayAssign
     : ID LBRACKET expr RBRACKET ASSIGN expr                 # ArrayAssign1D
     | ID LBRACKET expr RBRACKET LBRACKET expr RBRACKET ASSIGN expr
                                                             # ArrayAssign2D
+    | ID LBRACKET expr RBRACKET LBRACKET expr RBRACKET LBRACKET expr RBRACKET ASSIGN expr
+                                                            # ArrayAssign3D
     ;
 
 // ─── control de flujo ─────────────────────────────────────────────────────────
@@ -211,6 +213,8 @@ expr
     | builtinCall                                           # BuiltinExpr
     | ID LBRACKET expr RBRACKET                             # ArrayAccess1D
     | ID LBRACKET expr RBRACKET LBRACKET expr RBRACKET      # ArrayAccess2D
+    | ID LBRACKET expr RBRACKET LBRACKET expr RBRACKET LBRACKET expr RBRACKET
+                                                            # ArrayAccess3D
     | AMP ID                                                # RefExpr
     | STAR ID                                               # DerefExpr
     | LPAREN expr RPAREN                                    # GroupExpr
@@ -238,6 +242,17 @@ primary
         LBRACE (LBRACE (expr (COMMA expr)* COMMA?)? RBRACE
         (COMMA LBRACE (expr (COMMA expr)* COMMA?)? RBRACE)* COMMA?)? RBRACE
                                                             # ArrayLit2D
+    | LBRACKET INT_LIT RBRACKET LBRACKET INT_LIT RBRACKET LBRACKET INT_LIT RBRACKET typeRef
+        LBRACE (arrayPlane3D (COMMA arrayPlane3D)* COMMA?)? RBRACE
+                                                            # ArrayLit3D
+    ;
+
+arrayRow2D
+    : LBRACE (expr (COMMA expr)* COMMA?)? RBRACE
+    ;
+
+arrayPlane3D
+    : LBRACE (arrayRow2D (COMMA arrayRow2D)* COMMA?)? RBRACE
     ;
 
 // ─── llamadas ─────────────────────────────────────────────────────────────────

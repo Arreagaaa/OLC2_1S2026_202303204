@@ -1273,19 +1273,13 @@ class Interpreter extends \GolampiBaseVisitor
 
     public function visitArrayLit3D(ArrayLit3DContext $ctx): mixed
     {
-        // INT_LIT(0)=d1, INT_LIT(1)=d2, INT_LIT(2)=d3; expr() llega en orden lineal.
-        $d1     = (int) $ctx->INT_LIT(0)->getText();
-        $d2     = (int) $ctx->INT_LIT(1)->getText();
-        $d3     = (int) $ctx->INT_LIT(2)->getText();
-        $flat   = array_map(fn($e) => $this->visit($e), $ctx->expr());
         $result = [];
-        $idx    = 0;
 
-        for ($i = 0; $i < $d1; $i++) {
+        foreach ($ctx->arrayPlane3D() as $planeCtx) {
             $plane = [];
-            for ($j = 0; $j < $d2; $j++) {
-                $plane[] = array_slice($flat, $idx, $d3);
-                $idx += $d3;
+            foreach ($planeCtx->arrayRow2D() as $rowCtx) {
+                $row = array_map(fn($e) => $this->visit($e), $rowCtx->expr());
+                $plane[] = $row;
             }
             $result[] = $plane;
         }

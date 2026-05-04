@@ -52,8 +52,8 @@ document.getElementById('btn-validate-qemu').addEventListener('click', async () 
     const consola = document.getElementById('console');
     const reportView = document.getElementById('report-view');
 
-    consola.textContent = 'Validando entradas oficiales en QEMU...';
-    reportView.innerHTML = '<span class="report-placeholder">Ejecutando validacion QEMU...</span>';
+    consola.textContent = 'Validando entradas oficiales en ARM64...';
+    reportView.innerHTML = '<span class="report-placeholder">Ejecutando validacion ARM64 general...</span>';
 
     try {
         const res = await fetch(QEMU_VALIDATE_URL, {
@@ -63,7 +63,7 @@ document.getElementById('btn-validate-qemu').addEventListener('click', async () 
         });
 
         if (!res.ok) {
-            consola.textContent = `Error HTTP ${res.status} al validar en QEMU`;
+            consola.textContent = `Error HTTP ${res.status} al validar ARM64`;
             return;
         }
 
@@ -72,7 +72,7 @@ document.getElementById('btn-validate-qemu').addEventListener('click', async () 
         const results = data.results ?? [];
 
         const lines = [
-            '=== VALIDACION QEMU OFICIAL ===',
+            '=== VALIDACION ARM64 OFICIAL ===',
             `Total: ${summary.total} | PASS: ${summary.passed} | FAIL: ${summary.failed}`,
             '',
         ];
@@ -117,7 +117,7 @@ document.getElementById('btn-validate-qemu').addEventListener('click', async () 
             </table>
         `;
     } catch (err) {
-        consola.textContent = 'Error de red al validar en QEMU: ' + err.message;
+        consola.textContent = 'Error de red al validar ARM64: ' + err.message;
     }
 });
 
@@ -130,12 +130,12 @@ document.getElementById('btn-validate-single').addEventListener('click', async (
     const reportView = document.getElementById('report-view');
 
     currentSingleIndex = 0;
-    consola.textContent = 'Validando primer archivo...';
-    reportView.innerHTML = '<span class="report-placeholder">Validando archivo por archivo...</span>';
+    consola.textContent = 'Validando archivo ARM64 1/5...';
+    reportView.innerHTML = '<span class="report-placeholder">Validando archivo por archivo en ARM64...</span>';
 
     const validateNext = async () => {
         if (currentSingleIndex >= officialFiles.length) {
-            consola.textContent += '\n\n=== VALIDACION COMPLETADA ===\nTodos los archivos fueron validados.';
+            consola.textContent += '\n\n=== VALIDACION COMPLETADA ===\nTodos los archivos fueron validados en ARM64.';
             return;
         }
 
