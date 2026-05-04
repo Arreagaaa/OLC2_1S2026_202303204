@@ -11,6 +11,8 @@ fi
 
 cd "$PROJECT_DIR"
 
+mkdir -p "$PROJECT_DIR/output"
+
 INPUT_FILE="$INPUT_FILE" php <<'PHP'
 <?php
 $inputFile = getenv('INPUT_FILE');
