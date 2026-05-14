@@ -1,0 +1,17 @@
+{
+    "name": "javier/figure-6-4",
+    "autoload": {
+        "psr-4": {
+            "Javier\\Figure64\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Javier Rivas",
+            "email": "3563648950101@ingenieria.usac.edu.gt"
+        }
+    ],
+    "require": {
+        "antlr/antlr4-php-runtime": "^0.9.1"
+    }
+}

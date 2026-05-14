@@ -1,0 +1,10 @@
+INT=1
+FLOAT=2
+LBRACK=3
+RBRACK=4
+NUMBER=5
+WS=6
+'int'=1
+'float'=2
+'['=3
+']'=4

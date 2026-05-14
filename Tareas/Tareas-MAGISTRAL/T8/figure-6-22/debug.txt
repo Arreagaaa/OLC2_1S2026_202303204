@@ -1,0 +1,12 @@
+=== INTERPRETER ===
+a = (1,2,3) (dimensiones: [3])
+b = ((5,10),(15,20)) (dimensiones: [2, 2])
+a[0] = 1
+a[1] = 2
+a[2] = 3
+b[0][1] = 10
+b[1][0] = 15
+
+
+=== COMPILER ===
+Code written to output.txt

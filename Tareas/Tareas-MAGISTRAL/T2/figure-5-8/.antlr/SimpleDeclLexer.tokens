@@ -1,0 +1,8 @@
+INT=1
+FLOAT=2
+COMMA=3
+ID=4
+WS=5
+'int'=1
+'float'=2
+','=3
