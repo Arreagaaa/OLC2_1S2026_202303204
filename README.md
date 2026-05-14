@@ -2,7 +2,7 @@
 
 Este repositorio contiene el material, tareas y proyectos del curso "OLC2" (Compiladores II), semestre 1S2026.
 
-Contenido principal
+## Contenido principal
 - **Material/**: apuntes y recursos del curso.
 - **Proyecto 2/**: proyecto principal con frontend y backend (incluye el intérprete, generadores y pruebas).
 - **Proyecto1/**: implementación y versiones anteriores del proyecto del curso.
@@ -10,37 +10,40 @@ Contenido principal
 - **grammar/**: gramática ANTLR original.
 - **test/**: scripts de prueba y entradas de ejemplo.
 
-Limpieza realizada
-- Se han eliminado carpetas generadas y dependencias pesadas que no deben subirse al control de versiones: `vendor/`, carpetas generadas de ANTLR (`.antlr/`, `generated/`) y archivos de artefactos como `*.interp` y `*.tokens`.
-- Se creó un backup con los archivos/carpetas eliminados (si existían) en `/tmp/repo_cleanup_backup.tar.gz` en la máquina local. Revísalo antes de eliminar ese backup permanentemente.
+## Objetivo del repositorio
+Documentar y entregar el trabajo del curso alrededor de:
+- Diseño de gramáticas con ANTLR.
+- Construcción de analizadores léxicos y sintácticos.
+- Interpretación y generación de código.
+- Validación con pruebas y reportes.
 
-Por qué se eliminó esto
-- Archivos generados por ANTLR y dependencias instaladas (`vendor`) pueden regenerarse o reinstalarse y suelen aumentar mucho el tamaño del repositorio innecesariamente.
+## Proyectos del curso
 
-Cómo regenerar lo eliminado
-- Dependencias: ejecutar `composer install` dentro de cada subproyecto que lo requiera (por ejemplo `Proyecto 2/backend`).
-- Artefactos ANTLR: volver a generar los ficheros desde la gramática `Golampi.g4` y las herramientas ANTLR usadas por el curso.
+### Proyecto 1
+- Enfoque: base del lenguaje e intérprete.
+- Calificación: **99/100**.
 
-Archivos sensibles
-- Se buscó por patrones comunes (password, secret, token, keys). No se detectaron archivos privados obvios en las ubicaciones inspeccionadas. Si tienes claves privadas, elimina o mueve esos archivos y añade las entradas necesarias a `.gitignore`.
+### Proyecto 2
+- Enfoque: versión extendida con frontend, API, backend, pruebas E2E y salida ARM64.
+- Calificación: **100/100**.
 
-Proyectos y notas de calificación
-- **Proyecto 1:** 99/100
-- **Proyecto 2:** 100/100
+## Estructura general
+- `Proyecto 2/backend/`: intérprete, API y lógica principal.
+- `Proyecto 2/frontend/`: interfaz web para edición/ejecución y reportes.
+- `Proyecto 2/grammar/`: gramática ANTLR del lenguaje.
+- `Proyecto 2/test/`: pruebas E2E y entradas de validación.
+- `Proyecto1/`: versión previa del proyecto del curso.
+- `Tareas/`: actividades y ejercicios de laboratorio.
+- `Material/`: material de apoyo y documentos del curso.
 
-Instrucciones para el commit
-1. Revisa el backup en `/tmp/repo_cleanup_backup.tar.gz` si necesitas recuperar algo.
-2. Revisa los cambios con `git status` y `git diff`.
-3. Añade, prueba y realiza el commit:
+## Tecnologías utilizadas
+- PHP
+- ANTLR4
+- JavaScript, HTML y CSS
+- Scripts de automatización para pruebas y compilación
 
-```
-git add .
-git commit -m "Limpieza: eliminar vendor y archivos generados; agregar .gitignore y README actualizado"
-git push
-```
+## Estado del curso
+Curso finalizado con ambos proyectos entregados y calificados.
 
-Contacto
-- Si quieres que recupere algún archivo del backup o excluya otros patrones, dime cuáles y lo ajusto.
-
----------------------------------------------------------
-Última limpieza automática: 13 de mayo de 2026
+## Nota
+El repositorio conserva el código fuente y documentos académicos necesarios para revisión, estudio y referencia.
