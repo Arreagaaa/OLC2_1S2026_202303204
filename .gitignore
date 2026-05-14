@@ -1,0 +1,26 @@
+# Composer / PHP dependencies
+/vendor/
+
+# ANTLR generated artifacts
+**/.antlr/
+**/generated/
+*.interp
+*.tokens
+
+# Build outputs
+/output/
+*.s
+
+# Local environment / keys
+.env
+.env.local
+*.pem
+*.key
+id_rsa
+
+# Backup from cleanup
+/tmp/repo_cleanup_backup.tar.gz
+
+# OS files
+.DS_Store
+thumbs.db
